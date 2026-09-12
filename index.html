@@ -619,6 +619,23 @@
 
     <script>
         let b1X = 0, bM = 0, bP = 0, tx = 656, hist = [], op = null, opDeadline = null, departCap = 0, dailyCount = 0, softSelected = null, issuesMode = 2, timerInterval = null, timeLeft = 60, compoundMode = false, copiesSoftEffectuees = 0;
+        // Revenu du mois — compteur PERSISTÉ, incrémenté au moment exact d'un paiement
+        // (ajout ou renouvellement d'abonné), jamais recalculé en direct depuis la liste
+        // actuelle des abonnés. Avant ce correctif, retirer un abonné de la liste effaçait
+        // aussi son paiement du "revenu du mois" affiché — un abonné qui avait payé puis
+        // annulé voyait son argent disparaître des chiffres, comme s'il n'avait jamais payé.
+        // `revenuMoisPeriode` (format 'YYYY-MM') permet la remise à zéro automatique au
+        // changement de mois, sans jamais effacer le total d'un mois déjà écoulé tant que
+        // le mois en cours n'a pas changé.
+        let revenuMoisTotal = 0, revenuMoisPeriode = null;
+        // Ajoute un paiement au compteur du mois en cours — remet à zéro automatiquement
+        // si on a changé de mois depuis le dernier paiement enregistré.
+        function enregistrerRevenu(montant) {
+            const moisActuel = new Date().toISOString().slice(0, 7);
+            if (revenuMoisPeriode !== moisActuel) { revenuMoisTotal = 0; revenuMoisPeriode = moisActuel; }
+            revenuMoisTotal += (montant || 0);
+            sauvegarder();
+        }
         // Pas d'arrondi (CFA) appliqué aux mises côté soft (1xBet/1Win). Un pas trop
         // grossier par rapport au capital engagé peut "manger" une grande partie de
         // l'edge théorique (ex. capital de 1000 CFA avec un edge de 2% : un arrondi à
@@ -3987,6 +4004,7 @@
             const dateExpiration = calculerExpirationAuto();
             const abonne = { nom, whatsapp, formule: formuleLabel, jours, montant, datePaiement, dateExpiration, lienVip: null, retirePartout: false };
             abonnes.push(abonne);
+            enregistrerRevenu(montant);
             document.getElementById('aboNom').value = '';
             // Remis à leurs valeurs par défaut (pas vides) : "225" est l'indicatif Côte
             // d'Ivoire que tu utilises pour tous tes abonnés, et le montant redevient celui
@@ -4129,6 +4147,7 @@
             a.dateExpiration = base.toISOString().slice(0, 10);
             a.datePaiement = new Date().toISOString().slice(0, 10);
             a.retirePartout = false; // un renouvellement annule un éventuel retrait déjà effectué
+            enregistrerRevenu(a.montant);
             sauvegarder();
             rafraichirAbonnes();
             afficherToast(`🔄 ${a.nom} renouvelé jusqu'au ${a.dateExpiration}.`, 'info');
@@ -4234,19 +4253,22 @@
             // formule) — évite l'incohérence d'un ancien seuil fixe de 7j différent de celui
             // réellement utilisé pour l'étiquette affichée sur chaque ligne.
             let actifs = 0, aRelancer = 0, expires = 0;
-            const moisActuel = new Date().toISOString().slice(0, 7);
-            let revenuMois = 0;
             abonnes.forEach(a => {
                 const s = calculerStatutAbonne(a.dateExpiration, a.jours);
                 if (s.joursRestants < 0) expires++;
                 else if (s.classe === 'text-amber-400') { aRelancer++; actifs++; }
                 else actifs++;
-                if ((a.datePaiement || '').slice(0, 7) === moisActuel) revenuMois += (a.montant || 0);
             });
             document.getElementById('aboTotalActifs').innerText = actifs;
             document.getElementById('aboARelancer').innerText = aRelancer;
             document.getElementById('aboExpires').innerText = expires;
-            document.getElementById('aboRevenuMois').innerText = revenuMois.toLocaleString();
+            // "Revenu du mois" vient du compteur PERSISTÉ (enregistrerRevenu), pas d'un
+            // recalcul depuis la liste actuelle — sinon retirer un abonné effacerait aussi
+            // son paiement déjà encaissé des chiffres du mois. Remise à zéro automatique si
+            // le mois a changé depuis le dernier paiement enregistré.
+            const moisActuel = new Date().toISOString().slice(0, 7);
+            if (revenuMoisPeriode !== moisActuel) { revenuMoisTotal = 0; revenuMoisPeriode = moisActuel; }
+            document.getElementById('aboRevenuMois').innerText = revenuMoisTotal.toLocaleString();
 
             corps.innerHTML = indexed.map(a => {
                 const s = a._statut;
@@ -4382,7 +4404,7 @@
                 vipChatId: document.getElementById('telegramVipChatId')?.value.trim() || '',
                 calcBaseUrl: document.getElementById('calcBaseUrl')?.value.trim() || ''
             };
-            return {b1X, bM, bP, hist, departCap, dailyCount, compoundMode, misePct: pct, op, opDeadline, tx, tauxManuel, dernierJourCompteur, telegramConfig, dernierRecapJourAuto, dernierJournalSemaineAuto, dernierRecapMoisAuto, abonnes, envoisDifferes};
+            return {b1X, bM, bP, hist, departCap, dailyCount, compoundMode, misePct: pct, op, opDeadline, tx, tauxManuel, dernierJourCompteur, telegramConfig, dernierRecapJourAuto, dernierJournalSemaineAuto, dernierRecapMoisAuto, abonnes, envoisDifferes, revenuMoisTotal, revenuMoisPeriode};
         }
 
         function sauvegarder() {
@@ -4404,6 +4426,23 @@
                 dernierRecapJourAuto = s.dernierRecapJourAuto || null;
                 dernierJournalSemaineAuto = s.dernierJournalSemaineAuto || null;
                 dernierRecapMoisAuto = s.dernierRecapMoisAuto || null;
+                // Migration : une sauvegarde d'avant ce correctif n'a pas ce champ du tout
+                // (`revenuMoisPeriode === undefined`, différent de `null` qui, lui, signifie
+                // "champ présent mais pas encore de paiement enregistré ce mois-ci"). Dans ce
+                // cas précis, on reconstitue une valeur de départ à partir de l'ancien calcul
+                // en direct (paiements du mois dans la liste actuelle), pour ne pas afficher
+                // brutalement 0 CFA alors qu'un chiffre était déjà visible avant la mise à
+                // jour — un seul rattrapage ponctuel, jamais recalculé ainsi par la suite.
+                if (s.revenuMoisPeriode === undefined) {
+                    const moisActuelMigration = new Date().toISOString().slice(0, 7);
+                    revenuMoisTotal = (Array.isArray(s.abonnes) ? s.abonnes : [])
+                        .filter(a => (a.datePaiement || '').slice(0, 7) === moisActuelMigration)
+                        .reduce((somme, a) => somme + (a.montant || 0), 0);
+                    revenuMoisPeriode = moisActuelMigration;
+                } else {
+                    revenuMoisTotal = s.revenuMoisTotal || 0;
+                    revenuMoisPeriode = s.revenuMoisPeriode;
+                }
                 if (s.telegramConfig) {
                     const tc = s.telegramConfig;
                     if (document.getElementById('telegramActif')) document.getElementById('telegramActif').checked = !!tc.actif;

@@ -482,7 +482,7 @@
                                     </div>
                                     <button id="btnCompound" onclick="toggleCompound()" class="bg-slate-800 text-slate-500 border border-slate-700 px-2 py-0.5 rounded text-[7px] font-black uppercase">Mode Stable (OFF)</button>
                                 </div>
-                                <input type="number" id="mise" class="w-full bg-transparent text-5xl font-mono font-bold text-center outline-none text-emerald-500" value="0" readonly>
+                                <input type="number" id="mise" oninput="actualiserPctDepuisMise()" class="w-full bg-transparent text-5xl font-mono font-bold text-center outline-none text-emerald-500" value="0">
                             </div>
                             <div class="grid grid-cols-2 gap-4">
                                 <div class="text-center"><label class="text-[8px] text-slate-500 uppercase">Cote Soft</label><input type="number" id="coteS" value="2.10" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none"><p id="minSoft" class="text-[7px] text-slate-600 uppercase mt-1">min : —</p><p id="besoinSoft" class="text-[7px] uppercase mt-0.5"></p></div>
@@ -3764,6 +3764,22 @@
             const pct = Math.max(1, parseFloat(document.getElementById('misePct').value) || 10) / 100;
             document.getElementById('mise').value = Math.round((compoundMode ? (b1X+bM+bP) : departCap) * pct); 
             validerProfitMin(); 
+        }
+        // Sens inverse : la mise (montant en CFA) reste modifiable directement, et le %
+        // affiché se recalcule automatiquement pour rester cohérent — jamais figé, comme
+        // demandé. Utilise la MÊME base que actualiserMiseAuto() (capital de référence en
+        // Mode Stable, total des 3 wallets en Mode Composé), sinon les deux sens du calcul
+        // divergeraient silencieusement selon le mode actif.
+        function actualiserPctDepuisMise() {
+            const base = compoundMode ? (b1X+bM+bP) : departCap;
+            const montant = Math.max(0, parseFloat(document.getElementById('mise').value) || 0);
+            if (base > 0) {
+                const pct = (montant / base) * 100;
+                // Un chiffre rond reste affiché sans décimale (ex. "10", pas "10.0") ; sinon
+                // une décimale suffit pour rester lisible sans fausse précision.
+                document.getElementById('misePct').value = Number.isInteger(pct) ? pct : pct.toFixed(1);
+            }
+            validerProfitMin();
         }
         function annulerOperationExpired() {
             if(!op) return;

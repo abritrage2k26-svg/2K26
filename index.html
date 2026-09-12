@@ -3147,7 +3147,7 @@
             //  Cible de référence après tout mouvement : 20% (milieu de zone verte)
             //  Plafond anti-détection : 30% (au-delà, les algos softs signalent)
 
-            const horsService  = mise1;              // < 10%
+            const horsService  = departCap * 0.10;   // < 10%
             const limite       = departCap * 0.15;   // 10–15%
             const zoneMin      = departCap * 0.15;   // début zone verte
             const zoneMax      = departCap * 0.25;   // fin zone verte

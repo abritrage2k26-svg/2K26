@@ -3913,7 +3913,7 @@
                 setIssues(2); switchMode('standard');
             }
         }
-        function getDailyGoal() { const day = new Date().getDay(); return (day === 0 || day === 6) ? 4 : 2; }
+        function getDailyGoal() { return 3; }
         function updateGoalDisplay() { const goal = getDailyGoal(); const dots = document.getElementById('goalDots'); dots.innerHTML = ""; for(let i=1; i<=goal; i++){ let d = document.createElement('div'); d.className=`w-2 h-2 rounded-full ${i<=dailyCount?'bg-emerald-500 shadow-[0_0_8px_#10b981]':'bg-slate-800'}`; dots.appendChild(d); } document.getElementById('goalText').innerText = `${dailyCount} / ${goal} Surebets`; }
 
         // Reset automatique de l'objectif quotidien au changement de jour (date locale),

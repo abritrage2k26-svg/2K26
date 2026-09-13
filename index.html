@@ -144,6 +144,20 @@
                     </div>
                 </div>
 
+                <div class="glass p-6 rounded-3xl border border-blue-500/20 not-italic">
+                    <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
+                        <p class="text-[10px] font-black text-blue-400 uppercase tracking-widest">⏳ Liste d'attente (plafond d'abonnés actifs atteint)</p>
+                        <button onclick="toggleFormListeAttente()" class="bg-blue-600/20 text-blue-300 border border-blue-500/30 px-4 py-2 rounded-xl text-[9px] font-black uppercase">+ Ajouter</button>
+                    </div>
+                    <div id="formListeAttente" class="hidden grid grid-cols-2 gap-3 mb-3">
+                        <input type="text" id="attenteNom" placeholder="Nom / @Telegram" class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-[11px] text-white outline-none focus:border-blue-500">
+                        <input type="text" id="attenteWhatsapp" placeholder="Numéro WhatsApp" value="225" class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-[11px] text-white outline-none focus:border-blue-500">
+                        <button onclick="ajouterListeAttente()" class="col-span-2 bg-blue-600 text-white py-3 rounded-xl font-black text-[10px] uppercase">Ajouter à la liste d'attente</button>
+                    </div>
+                    <div id="corpsListeAttente" class="space-y-2"></div>
+                </div>
+
+
                 <div class="glass p-6 rounded-3xl border border-white/5 not-italic">
                     <p class="text-[10px] font-black text-violet-400 uppercase tracking-widest mb-4">➕ Ajouter / renouveler un abonné</p>
                     <div class="grid grid-cols-7 gap-3">
@@ -365,6 +379,11 @@
                 </div>
             </div>
 
+            <div id="bandeauAbonnesRisque" class="hidden mx-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl px-5 py-3 flex items-center justify-between gap-3 cursor-pointer not-italic" onclick="toggleAbonnes()">
+                <p id="bandeauAbonnesRisqueTexte" class="text-[10px] font-black text-amber-400 uppercase"></p>
+                <span class="text-[9px] text-amber-500 underline">Voir →</span>
+            </div>
+
             <div class="flex gap-8 border-b border-white/5 px-4">
                 <button id="tabStandard" onclick="switchMode('standard')" class="pb-4 text-[10px] font-black uppercase italic tab-active">Calcul Standard</button>
                 <button id="tabSauvetage" onclick="switchMode('sauvetage')" class="pb-4 text-[10px] font-black uppercase italic text-slate-500">Calcul Sauvetage 🚨</button>
@@ -433,6 +452,11 @@
                 <div class="flex items-center justify-between gap-3 mt-3">
                     <p id="telegramVipStatus" class="text-[9px] text-slate-500 font-black uppercase italic">Non configuré</p>
                     <button onclick="testerTelegramVip()" class="bg-amber-700/30 text-amber-300 border border-amber-600/40 px-4 py-2 rounded-xl font-black text-[9px] uppercase hover:bg-amber-700/50">Tester</button>
+                </div>
+                <div class="mt-4 pt-4 border-t border-white/5">
+                    <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">🔔 Rappel abonnés à toi-même (optionnel)</p>
+                    <input type="text" id="telegramRappelChatId" placeholder="Ton propre chat ID Telegram (ex. ton ID personnel avec le bot)" onchange="sauvegarderConfigTelegram()" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-[10px] text-white outline-none focus:border-amber-500">
+                    <p class="text-[8px] text-slate-600 mt-1 italic">Utilise le même bot que le canal VIP — un message t'est envoyé ici (1x/jour max) s'il y a des abonnés à relancer ou expirés.</p>
                 </div>
             </div>
 
@@ -630,6 +654,7 @@
         // mois suivant — contrairement à un simple compteur "du mois en cours" qui perdrait
         // le chiffre de janvier dès que février commence.
         let revenuParMois = {};
+        let dernierRappelAbonnesEnvoye = null;
         // Ajoute un paiement au total du mois EN COURS au moment de l'appel — les mois
         // passés dans revenuParMois restent inchangés.
         function enregistrerRevenu(montant) {
@@ -2841,6 +2866,11 @@
             setInterval(verifierPublicationsAutomatiques, 60000);
             setInterval(verifierRetraitsExpires, 60000);
             verifierRetraitsExpires(); // vérification immédiate au chargement, sans attendre 60s
+            // Bandeau abonnés à relancer/expirés + rappel Telegram à soi-même — vérifié
+            // immédiatement au chargement (pas seulement quand le panneau Abonnés s'ouvre),
+            // pour que ce soit visible dès l'arrivée sur le terminal.
+            majBandeauAbonnesRisque();
+            envoyerRappelAbonnesTelegram();
             // Vérifie fréquemment si on est bien sur la vue terminal (pas abonnés/journal/édition)
             // pour afficher ou masquer le bouton flottant scroll haut/bas — un intervalle court
             // car c'est une vérification légère (une seule classe CSS à lire), pas besoin
@@ -4023,7 +4053,8 @@
             return { label: `✅ ACTIF (${joursRestants}j)`, classe: 'text-emerald-400', joursRestants };
         }
 
-        function ajouterAbonne() {
+        const LIMITE_ABONNES_ACTIFS = 20;
+        async function ajouterAbonne() {
             const nom = document.getElementById('aboNom').value.trim();
             const whatsapp = document.getElementById('aboWhatsapp').value.trim().replace(/[^\d]/g, '');
             const montant = parseFloat(document.getElementById('aboMontant').value) || 0;
@@ -4032,6 +4063,15 @@
             const formuleLabel = jours === 7 ? 'Hebdo' : jours === 90 ? 'Trimestriel' : 'Mensuel';
             if (!nom) { afficherToast("Le nom de l'abonné est requis.", 'danger'); return; }
             if (!datePaiement) { afficherToast("La date de paiement est requise.", 'danger'); return; }
+            // Plafond de 20 membres actifs — pas un blocage strict, mais une confirmation
+            // volontaire : le compte des abonnés EXPIRÉS ne compte pas dans ce total (ils ne
+            // reçoivent plus les signaux, aucun risque de détection lié à eux), donc dépasser
+            // 20 lignes dans la liste ne veut pas forcément dire dépasser 20 accès actifs.
+            const actifsActuels = abonnes.filter(a => calculerStatutAbonne(a.dateExpiration, a.jours).joursRestants >= 0).length;
+            if (actifsActuels >= LIMITE_ABONNES_ACTIFS) {
+                const continuer = await confirmerPersonnalise(`Tu as déjà ${actifsActuels} abonnés actifs — le plafond annoncé est ${LIMITE_ABONNES_ACTIFS} (protection anti-détection, pas juste marketing). Ajouter quand même ${nom} ?`);
+                if (!continuer) return;
+            }
             const dateExpiration = calculerExpirationAuto();
             const abonne = { nom, whatsapp, formule: formuleLabel, jours, montant, datePaiement, dateExpiration, lienVip: null, retirePartout: false };
             abonnes.push(abonne);
@@ -4262,6 +4302,104 @@
             rafraichirAbonnes();
         }
 
+        // ── Liste d'attente — pour les prospects contactés une fois le plafond d'abonnés
+        // actifs atteint. Séparée de `abonnes` : ce ne sont pas des abonnés (aucun paiement,
+        // aucun accès), juste des personnes à recontacter dès qu'une place se libère.
+        let listeAttente = [];
+
+        function toggleFormListeAttente() {
+            document.getElementById('formListeAttente').classList.toggle('hidden');
+        }
+
+        function ajouterListeAttente() {
+            const nom = document.getElementById('attenteNom').value.trim();
+            const whatsapp = document.getElementById('attenteWhatsapp').value.trim().replace(/[^\d]/g, '');
+            if (!nom) { afficherToast("Le nom est requis.", 'danger'); return; }
+            listeAttente.push({ nom, whatsapp, dateAjout: new Date().toISOString().slice(0, 10) });
+            document.getElementById('attenteNom').value = '';
+            document.getElementById('attenteWhatsapp').value = '225';
+            sauvegarder();
+            rafraichirListeAttente();
+            afficherToast(`${nom} ajouté à la liste d'attente.`, 'info');
+        }
+
+        async function retirerListeAttente(index) {
+            const p = listeAttente[index];
+            if (!p) return;
+            if (!(await confirmerPersonnalise(`Retirer ${p.nom} de la liste d'attente ?`))) return;
+            listeAttente.splice(index, 1);
+            sauvegarder();
+            rafraichirListeAttente();
+        }
+
+        function contacterListeAttente(index) {
+            const p = listeAttente[index];
+            if (!p) return;
+            if (!p.whatsapp) { afficherToast("Aucun numéro WhatsApp pour cette personne.", 'danger'); return; }
+            envoyerWhatsapp(p.whatsapp, `Salut ${p.nom}, une place vient de se libérer sur BAG VIP ! Toujours intéressé ? Dis-moi et je t'envoie ton lien d'accès.`);
+        }
+
+        function rafraichirListeAttente() {
+            const corps = document.getElementById('corpsListeAttente');
+            if (!corps) return;
+            corps.innerHTML = listeAttente.length
+                ? listeAttente.map((p, i) => `
+                    <div class="flex items-center justify-between bg-slate-900 rounded-xl px-4 py-3 text-[10px]">
+                        <div><span class="font-black text-white">${escapeHtml(p.nom)}</span> <span class="text-slate-500">— ajouté le ${p.dateAjout}</span></div>
+                        <div class="flex gap-2">
+                            <button onclick="contacterListeAttente(${i})" class="bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-lg font-black uppercase">📲 Contacter</button>
+                            <button onclick="retirerListeAttente(${i})" class="bg-red-900/20 text-red-400 border border-red-500/30 px-3 py-1 rounded-lg font-black uppercase">Retirer</button>
+                        </div>
+                    </div>`).join('')
+                : `<p class="text-[10px] text-slate-600 italic">Personne en attente pour l'instant.</p>`;
+        }
+
+        // ── Bandeau + rappel Telegram pour les abonnés à relancer/expirés ──
+        // Calcule qui est à relancer (≤7j) ou déjà expiré, à partir du MÊME calcul de statut
+        // que le panneau Abonnés — jamais un second seuil qui pourrait diverger de celui déjà
+        // affiché ligne par ligne.
+        function verifierAbonnesARisque() {
+            const aRelancer = [], expires = [];
+            abonnes.forEach(a => {
+                const s = calculerStatutAbonne(a.dateExpiration, a.jours);
+                if (s.joursRestants < 0) expires.push(a);
+                else if (s.classe === 'text-amber-400') aRelancer.push(a);
+            });
+            return { aRelancer, expires };
+        }
+
+        // Bandeau visible directement sur le terminal — pas besoin d'ouvrir le panneau
+        // Abonnés pour découvrir qu'il y a quelque chose à faire.
+        function majBandeauAbonnesRisque() {
+            const bandeau = document.getElementById('bandeauAbonnesRisque');
+            if (!bandeau) return;
+            const { aRelancer, expires } = verifierAbonnesARisque();
+            if (aRelancer.length === 0 && expires.length === 0) { bandeau.classList.add('hidden'); return; }
+            const parties = [];
+            if (aRelancer.length) parties.push(`${aRelancer.length} à relancer`);
+            if (expires.length) parties.push(`${expires.length} expiré${expires.length > 1 ? 's' : ''}`);
+            document.getElementById('bandeauAbonnesRisqueTexte').innerText = `⚠️ Abonnés : ${parties.join(' · ')}`;
+            bandeau.classList.remove('hidden');
+        }
+
+        // Rappel Telegram à toi-même — envoyé au maximum 1 fois par jour (jamais à chaque
+        // simple rechargement de la page), uniquement s'il y a effectivement quelque chose à
+        // traiter. Utilise le même bot que le canal VIP, sur ton propre chat personnel.
+        async function envoyerRappelAbonnesTelegram() {
+            const chatId = document.getElementById('telegramRappelChatId')?.value.trim();
+            const token = document.getElementById('telegramVipToken')?.value.trim();
+            if (!chatId || !token) return;
+            const aujourdHui = new Date().toISOString().slice(0, 10);
+            if (dernierRappelAbonnesEnvoye === aujourdHui) return;
+            const { aRelancer, expires } = verifierAbonnesARisque();
+            if (aRelancer.length === 0 && expires.length === 0) return;
+            const lignes = ['🔔 Rappel BAG — abonnés à traiter aujourd\'hui :'];
+            if (aRelancer.length) lignes.push(`\n⏳ À relancer (${aRelancer.length}) : ${aRelancer.map(a => a.nom).join(', ')}`);
+            if (expires.length) lignes.push(`\n⛔ Expirés (${expires.length}) : ${expires.map(a => a.nom).join(', ')}`);
+            const res = await envoyerTelegramVers(token, chatId, lignes.join(''));
+            if (res.ok) { dernierRappelAbonnesEnvoye = aujourdHui; sauvegarder(); }
+        }
+
         function rafraichirAbonnes() {
             const recherche = (document.getElementById('aboRecherche')?.value || '').toLowerCase();
             const formuleFiltre = document.getElementById('aboFiltreFormule')?.value || '';
@@ -4293,6 +4431,8 @@
             document.getElementById('aboTotalActifs').innerText = actifs;
             document.getElementById('aboARelancer').innerText = aRelancer;
             document.getElementById('aboExpires').innerText = expires;
+            rafraichirListeAttente();
+            majBandeauAbonnesRisque();
             // "Revenu du mois" lit directement l'entrée du mois en cours dans l'historique
             // persisté (revenuParMois) — jamais recalculé depuis la liste actuelle, pour que
             // retirer un abonné n'efface jamais son paiement déjà encaissé.
@@ -4493,9 +4633,10 @@
                 vipActif: document.getElementById('telegramVipActif')?.checked || false,
                 vipToken: document.getElementById('telegramVipToken')?.value.trim() || '',
                 vipChatId: document.getElementById('telegramVipChatId')?.value.trim() || '',
-                calcBaseUrl: document.getElementById('calcBaseUrl')?.value.trim() || ''
+                calcBaseUrl: document.getElementById('calcBaseUrl')?.value.trim() || '',
+                rappelChatId: document.getElementById('telegramRappelChatId')?.value.trim() || ''
             };
-            return {b1X, bM, bP, hist, departCap, dailyCount, compoundMode, misePct: pct, op, opDeadline, tx, tauxManuel, dernierJourCompteur, telegramConfig, dernierRecapJourAuto, dernierJournalSemaineAuto, dernierRecapMoisAuto, abonnes, envoisDifferes, revenuParMois};
+            return {b1X, bM, bP, hist, departCap, dailyCount, compoundMode, misePct: pct, op, opDeadline, tx, tauxManuel, dernierJourCompteur, telegramConfig, dernierRecapJourAuto, dernierJournalSemaineAuto, dernierRecapMoisAuto, abonnes, envoisDifferes, revenuParMois, listeAttente, dernierRappelAbonnesEnvoye};
         }
 
         function sauvegarder() {
@@ -4514,6 +4655,8 @@
                 dernierJourCompteur = s.dernierJourCompteur || null;
                 abonnes = Array.isArray(s.abonnes) ? s.abonnes : [];
                 envoisDifferes = Array.isArray(s.envoisDifferes) ? s.envoisDifferes : [];
+                listeAttente = Array.isArray(s.listeAttente) ? s.listeAttente : [];
+                dernierRappelAbonnesEnvoye = s.dernierRappelAbonnesEnvoye || null;
                 dernierRecapJourAuto = s.dernierRecapJourAuto || null;
                 dernierJournalSemaineAuto = s.dernierJournalSemaineAuto || null;
                 dernierRecapMoisAuto = s.dernierRecapMoisAuto || null;
@@ -4547,6 +4690,7 @@
                     if (document.getElementById('telegramVipToken')) document.getElementById('telegramVipToken').value = tc.vipToken || '';
                     if (document.getElementById('telegramVipChatId')) document.getElementById('telegramVipChatId').value = tc.vipChatId || '';
                     if (document.getElementById('calcBaseUrl')) document.getElementById('calcBaseUrl').value = tc.calcBaseUrl || '';
+                    if (document.getElementById('telegramRappelChatId')) document.getElementById('telegramRappelChatId').value = tc.rappelChatId || '';
                 }
                 majStatutTelegram();
                 majStatutTelegramVip();

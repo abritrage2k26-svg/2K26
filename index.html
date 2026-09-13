@@ -1111,14 +1111,14 @@
                     // Retire un résidu isolé d'icône mal lue par l'OCR (le petit bouton "copier
                     // le nom du match" affiché par BreakingBet juste avant l'équipe, transformé
                     // en lettres parasites selon la qualité de capture : "K", "Ki", "mi", "wi",
-                    // "w"/"W"...).
+                    // "Bi", "w"/"W"...).
                     // Volontairement une liste courte et précise plutôt qu'une règle large, pour
                     // ne jamais risquer de tronquer un vrai préfixe de club (ex. "KS Kastrioti",
                     // "TSG Hoffenheim" doivent rester intacts). "w"/"W" isolé est extrêmement
                     // rare comme vrai début de nom d'équipe (un des seuls cas connus, "W
                     // Connection FC", n'apparaît sur aucune des ligues suivies par cette
                     // stratégie) — le risque est jugé négligeable face à la fréquence du résidu.
-                    reste = reste.replace(/^(?:mi|ki|wi|k|m|w)\s+(?=[A-ZÀ-Ý])/i, '').trim();
+                    reste = reste.replace(/^(?:mi|ki|wi|bi|k|m|w|b)\s+(?=[A-ZÀ-Ý])/i, '').trim();
                     // Autre variante de lecture du même bouton "copier" — cette fois rendu en
                     // caractères non-ASCII plutôt qu'en lettres latines parasites (pas la flèche
                     // de mouvement de cote gérée plus loin en fin de ligne : icône différente,

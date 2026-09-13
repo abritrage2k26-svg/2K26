@@ -4318,11 +4318,59 @@
             const box = document.getElementById('historiqueRevenuBox');
             const ouvert = !box.classList.contains('hidden');
             if (ouvert) { box.classList.add('hidden'); return; }
+            rafraichirHistoriqueRevenuBox();
+            box.classList.remove('hidden');
+        }
+
+        // Reconstruit le contenu du volet historique — appelée à l'ouverture ET après
+        // chaque modification/suppression, pour refléter immédiatement le changement sans
+        // devoir fermer puis rouvrir le volet à la main.
+        function rafraichirHistoriqueRevenuBox() {
+            const box = document.getElementById('historiqueRevenuBox');
             const moisTries = Object.keys(revenuParMois).sort().reverse();
             box.innerHTML = moisTries.length
-                ? moisTries.map(m => `<div class="flex justify-between text-[10px] py-1 not-italic"><span class="text-slate-400">${m}</span><span class="font-black text-violet-300">${(revenuParMois[m]||0).toLocaleString()} CFA</span></div>`).join('')
+                ? moisTries.map(m => `
+                    <div class="flex items-center justify-between gap-2 text-[10px] py-1 not-italic">
+                        <span class="text-slate-400">${m}</span>
+                        <div class="flex items-center gap-1">
+                            <input type="number" value="${revenuParMois[m] || 0}" onchange="modifierRevenuMois('${m}', this.value)" class="w-20 bg-slate-800 border border-white/10 rounded px-1 py-0.5 text-right font-black text-violet-300 outline-none focus:border-violet-500">
+                            <button onclick="supprimerRevenuMois('${m}')" class="text-red-400 hover:text-red-300 px-1" title="Supprimer ce mois">✕</button>
+                        </div>
+                    </div>`).join('')
                 : `<p class="text-[10px] text-slate-600 not-italic">Aucun historique pour l'instant.</p>`;
-            box.classList.remove('hidden');
+            box.innerHTML += `<button onclick="reinitialiserHistoriqueRevenu()" class="w-full mt-3 pt-2 border-t border-white/10 text-[9px] text-red-400 hover:text-red-300 uppercase not-italic">Réinitialiser tout l'historique</button>`;
+        }
+
+        // Modifie manuellement le total d'un mois précis — utile pour corriger une erreur de
+        // saisie ou un montant qui ne correspond plus à la réalité, sans devoir passer par
+        // les abonnés eux-mêmes (qui peuvent avoir été retirés depuis).
+        function modifierRevenuMois(mois, valeur) {
+            const montant = Math.max(0, parseFloat(valeur) || 0);
+            revenuParMois[mois] = montant;
+            sauvegarder();
+            rafraichirAbonnes();
+            rafraichirHistoriqueRevenuBox();
+            afficherToast(`Revenu de ${mois} mis à jour : ${montant.toLocaleString()} CFA.`, 'info');
+        }
+
+        // Supprime complètement l'entrée d'un mois (différent de la remettre à 0 — celle-ci
+        // disparaît de la liste plutôt que d'afficher "0 CFA").
+        async function supprimerRevenuMois(mois) {
+            if (!(await confirmerPersonnalise(`Supprimer complètement l'entrée de revenu pour ${mois} ?`))) return;
+            delete revenuParMois[mois];
+            sauvegarder();
+            rafraichirAbonnes();
+            rafraichirHistoriqueRevenuBox();
+        }
+
+        // Efface tout l'historique des revenus — remise à zéro complète, jamais partielle.
+        async function reinitialiserHistoriqueRevenu() {
+            if (!(await confirmerPersonnalise("Effacer tout l'historique des revenus (tous les mois) ? Cette action est irréversible."))) return;
+            revenuParMois = {};
+            sauvegarder();
+            rafraichirAbonnes();
+            document.getElementById('historiqueRevenuBox').classList.add('hidden');
+            afficherToast("Historique des revenus entièrement réinitialisé.", 'info');
         }
         
         function exporterExcel() {

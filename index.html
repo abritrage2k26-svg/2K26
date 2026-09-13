@@ -2876,7 +2876,21 @@
             }
         });
 
-        function updateWallet(id, val) { const num = parseFloat(val) || 0; if(id === '1X') b1X = num; if(id === 'M') bM = num; if(id === 'P') bP = num; rafraichir(); rafraichirVueEnsemble(); }
+        // Dépôt/retrait manuel sur un wallet — recalibre automatiquement le capital de
+        // référence à chaque appel (contrairement aux mouvements de solde pendant une
+        // opération, qui touchent b1X/bM/bP directement sans jamais passer par cette
+        // fonction, donc sans jamais déclencher ce recalibrage). Évite les faux
+        // avertissements de zone basés sur un ancien total périmé après un dépôt, sans
+        // dépendre de se souvenir de cliquer "Recalibrer Actifs" à chaque fois.
+        function updateWallet(id, val) {
+            const num = parseFloat(val) || 0;
+            if(id === '1X') b1X = num; if(id === 'M') bM = num; if(id === 'P') bP = num;
+            departCap = b1X + bM + bP;
+            document.getElementById('inputRefCap').value = Math.floor(departCap);
+            actualiserMiseAuto();
+            rafraichir();
+            rafraichirVueEnsemble();
+        }
         function manualCapUpdate(val) { departCap = parseFloat(val) || 0; actualiserMiseAuto(); rafraichir(); rafraichirVueEnsemble(); }
         function recalibrerActifs() { departCap = b1X + bM + bP; document.getElementById('inputRefCap').value = Math.floor(departCap); actualiserMiseAuto(); rafraichir(); rafraichirVueEnsemble(); }
 

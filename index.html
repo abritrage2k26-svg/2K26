@@ -3714,6 +3714,18 @@
             const cp = lireCote('coteP');
             const t  = parseFloat(document.getElementById('mise').value);
 
+            // Repère visuel "petit capital favorable" : Pinnacle en dessous de 2, ET en
+            // dessous de la cote soft (peu importe sa valeur à elle — c'est le rapport entre
+            // les deux qui détermine la part de mise, pas la cote Pinnacle isolément). Purement
+            // indicatif, ne bloque ni ne modifie aucun calcul — juste une surbrillance.
+            const champCoteP = document.getElementById('coteP');
+            if (champCoteP) {
+                const favorable = cp > 1 && cs > 1 && cp < 2 && cp < cs;
+                champCoteP.classList.toggle('border-emerald-500', favorable);
+                champCoteP.classList.toggle('ring-2', favorable);
+                champCoteP.classList.toggle('ring-emerald-500/40', favorable);
+            }
+
             if(issuesMode === 2) {
                 const arb = (1/cs) + (1/cp);
                 let mS = Math.round(((t/arb)/cs)/PAS_ARRONDI_CFA)*PAS_ARRONDI_CFA;

@@ -389,6 +389,11 @@
                 <span class="text-[9px] text-blue-400 underline">Exporter →</span>
             </div>
 
+            <div id="bandeauOperationsPending" class="hidden mx-4 bg-purple-500/10 border border-purple-500/30 rounded-2xl px-5 py-3 flex items-center justify-between gap-3 cursor-pointer not-italic" onclick="basculerAffichage()" title="Ouvre le journal pour résoudre">
+                <p id="bandeauOperationsPendingTexte" class="text-[10px] font-black text-purple-400 uppercase"></p>
+                <span class="text-[9px] text-purple-400 underline">Résoudre →</span>
+            </div>
+
             <div class="flex gap-8 border-b border-white/5 px-4">
                 <button id="tabStandard" onclick="switchMode('standard')" class="pb-4 text-[10px] font-black uppercase italic tab-active">Calcul Standard</button>
                 <button id="tabSauvetage" onclick="switchMode('sauvetage')" class="pb-4 text-[10px] font-black uppercase italic text-slate-500">Calcul Sauvetage 🚨</button>
@@ -479,6 +484,7 @@
                                 <button onclick="selectSoft('1xbet')" id="btn-1xbet" class="btn-soft bg-blue-400/10 p-4 rounded-2xl border border-blue-400/20"><span class="text-[10px] font-black text-blue-400 uppercase">1xBet</span></button>
                                 <button onclick="selectSoft('1win')" id="btn-1win" class="btn-soft bg-blue-600/10 p-4 rounded-2xl border border-blue-600/30"><span class="text-[10px] font-black text-blue-600 uppercase">1Win</span></button>
                             </div>
+                            <p id="suggestionSoftJour" class="hidden text-[8px] text-amber-400 uppercase font-black text-center -mt-3"></p>
                             <!-- Contexte du signal — pré-rempli par l'OCR quand disponible, mais TOUJOURS
                                  éditable manuellement. Sert de filet quand l'OCR ne lit pas (ou mal) le
                                  sport/match/ligue/marché : sans ces champs, le signal Telegram partait
@@ -2946,6 +2952,7 @@
             // pour que ce soit visible dès l'arrivée sur le terminal.
             majBandeauAbonnesRisque();
             majBandeauSauvegarde();
+            majBandeauOperationsPending();
             envoyerRappelAbonnesTelegram();
             // Vérifie fréquemment si on est bien sur la vue terminal (pas abonnés/journal/édition)
             // pour afficher ou masquer le bouton flottant scroll haut/bas — un intervalle court
@@ -3015,6 +3022,7 @@
             document.getElementById('ensTotal').innerText = Math.floor(totalReel).toLocaleString();
             document.getElementById('edit1X').value = b1X; document.getElementById('editM').value = bM; document.getElementById('editP').value = Math.round(bP);
             updateDynamicFlux('1X', b1X); updateDynamicFlux('M', bM); updateDynamicFlux('P', bP);
+            majBandeauOperationsPending();
             
             const sDate = document.getElementById('searchDate').value.toLowerCase();
             const sMode = document.getElementById('searchMode').value.toLowerCase();
@@ -3317,7 +3325,26 @@
             }
         }
 
-        function selectSoft(id) { softSelected = id; document.querySelectorAll('.btn-soft').forEach(b => b.classList.remove('active')); document.getElementById('btn-'+id).classList.add('active'); validerProfitMin(); document.getElementById('coteS').focus(); }
+        // Nombre d'opérations déjà lancées AUJOURD'HUI sur un soft donné ('1xbet'|'1win').
+        function nbUtilisationsSoftAujourdHui(id) {
+            const aujourdHui = new Date().toLocaleDateString('fr-FR');
+            return hist.filter(h => h.fullDate === aujourdHui && (h.softId || '').toLowerCase() === id).length;
+        }
+
+        // Repère visuel de répartition quotidienne — jamais un blocage : le soft n'est pas un
+        // choix libre de l'opérateur, c'est l'alerte elle-même qui dicte lequel est
+        // disponible (1xBet ou 1Win selon ce que BreakingBet a détecté). Bloquer la sélection
+        // empêcherait de lancer une alerte parfaitement valide si elle n'utilise justement que
+        // le soft déjà utilisé aujourd'hui — aucune alternative possible dans ce cas, l'alerte
+        // n'en propose qu'un seul. Le signal reste visible (bouton grisé, message), mais ne
+        // gêne jamais une opération réelle.
+        function selectSoft(id) {
+            softSelected = id;
+            document.querySelectorAll('.btn-soft').forEach(b => b.classList.remove('active'));
+            document.getElementById('btn-'+id).classList.add('active');
+            validerProfitMin();
+            document.getElementById('coteS').focus();
+        }
 
         // Réétiquette dynamiquement les 3 options du menu "Gagnant" en mode 3 issues flexible,
         // pour qu'elles reflètent le vrai bookmaker et la vraie cote de chaque côté plutôt que
@@ -3782,6 +3809,11 @@
                 const minSoftInfo = minPourBookmaker(softSelected);
                 const miseSousMinSoft = minSoftInfo && mS < minSoftInfo.valeur;
                 const miseSousMin = miseSousMinPinnacle || miseSousMinSoft;
+                // Un soft déjà utilisé aujourd'hui devient indisponible jusqu'au lendemain,
+                // même pour une toute nouvelle alerte qui le désigne à nouveau — discipline
+                // anti-détection assumée : une seule opération par soft par jour, sans
+                // exception ni contournement possible depuis le terminal.
+                const softDejaUtiliseAujourdHui = softSelected && nbUtilisationsSoftAujourdHui(softSelected) >= 1;
                 // Edge théorique (cotes brutes, avant tout arrondi de mise) — sert de référence
                 // pour détecter quand l'arrondi mange une part importante du profit attendu.
                 const edgeTheorique = (1 - arb) * 100;
@@ -3790,7 +3822,7 @@
                 // ne déclenchait JAMAIS cet avertissement, laissant le message erroné "ARB ≥ 1"
                 // comme seule explication alors que la vraie cause est l'arrondi, pas les cotes.
                 afficherAvertissementArrondi(arb < 1 ? pP : null, edgeTheorique);
-                if(t>0 && softSelected && vraieSurebet && !fondsInsuffisants && !miseSousMin) {
+                if(t>0 && softSelected && vraieSurebet && !fondsInsuffisants && !miseSousMin && !softDejaUtiliseAujourdHui) {
                     btn.disabled=false; btn.className="w-full py-5 bg-emerald-600 text-white rounded-3xl font-black text-[11px] uppercase italic shadow-[0_0_15px_rgba(16,185,129,0.3)]"; btn.innerText="Lancer l'Analyse ("+pP.toFixed(1)+"%)";
                 } else {
                     btn.disabled=true; btn.className="w-full py-5 bg-red-900/20 text-red-500 rounded-3xl font-black text-[11px] uppercase cursor-not-allowed italic";
@@ -3804,7 +3836,7 @@
                         if (mPC > bP) manques.push(`PINNACLE MANQUE ${((mPC - bP)/tx).toFixed(2)} €`);
                         msgManque = "⛔ " + manques.join(' · ');
                     }
-                    btn.innerText = t>0&&softSelected&&vraieSurebet&&fondsInsuffisants ? msgManque : t>0&&softSelected&&vraieSurebet&&miseSousMinPinnacle ? "⛔ MISE PINNACLE SOUS LE MINIMUM (5€) — AUGMENTE LA MISE" : t>0&&softSelected&&vraieSurebet&&miseSousMinSoft ? `⛔ MISE ${minSoftInfo.label.toUpperCase().replace('MIN : ', '')} — AUGMENTE LA MISE` : t>0&&cs>0&&cp>0&&edgeMangeParArrondi ? "⚠️ EDGE MANGÉ PAR L'ARRONDI — AUGMENTE LA MISE" : t>0&&cs>0&&cp>0&&!vraieSurebet ? "PAS DE SUREBET (ARB ≥ 1)" : t>0 ? "SAISIE DES DONNÉES EN COURS" : "DÉFINIR CAPITAL DE RÉFÉRENCE";
+                    btn.innerText = t>0&&softSelected&&vraieSurebet&&softDejaUtiliseAujourdHui ? `⛔ ${(softSelected||'').toUpperCase()} DÉJÀ UTILISÉ AUJOURD'HUI` : t>0&&softSelected&&vraieSurebet&&fondsInsuffisants ? msgManque : t>0&&softSelected&&vraieSurebet&&miseSousMinPinnacle ? "⛔ MISE PINNACLE SOUS LE MINIMUM (5€) — AUGMENTE LA MISE" : t>0&&softSelected&&vraieSurebet&&miseSousMinSoft ? `⛔ MISE ${minSoftInfo.label.toUpperCase().replace('MIN : ', '')} — AUGMENTE LA MISE` : t>0&&cs>0&&cp>0&&edgeMangeParArrondi ? "⚠️ EDGE MANGÉ PAR L'ARRONDI — AUGMENTE LA MISE" : t>0&&cs>0&&cp>0&&!vraieSurebet ? "PAS DE SUREBET (ARB ≥ 1)" : t>0 ? "SAISIE DES DONNÉES EN COURS" : "DÉFINIR CAPITAL DE RÉFÉRENCE";
                 }
             } else {
                 // 3 issues — lecture des 3 cotes et 3 bookmakers
@@ -3879,8 +3911,15 @@
                     const valeurNative = bkSel[n] === 'pinnacle' ? cfa / tx : cfa;
                     if (valeurNative < info.valeur) { sideSousMin = { n, info }; break; }
                 }
+                // Même règle qu'en 2 issues : un soft (1xBet/1Win) déjà utilisé aujourd'hui
+                // bloque le lancement, même pour un côté de cette opération à 3 issues.
+                let softDejaUtilise3I = null;
+                for (const n of [1, 2, 3]) {
+                    const bk = bkSel[n];
+                    if ((bk === '1xbet' || bk === '1win') && nbUtilisationsSoftAujourdHui(bk) >= 1) { softDejaUtilise3I = bk; break; }
+                }
 
-                if(t>0 && vraieSurebet && !fondsInsuffisants3I && !sideSousMin) {
+                if(t>0 && vraieSurebet && !fondsInsuffisants3I && !sideSousMin && !softDejaUtilise3I) {
                     btn.disabled=false; btn.className="w-full py-5 bg-purple-600 text-white rounded-3xl font-black text-[11px] uppercase italic shadow-[0_0_15px_rgba(168,85,247,0.3)]"; btn.innerText="Lancer 3 Issues ("+pP.toFixed(1)+"%)";
                 } else {
                     btn.disabled=true; btn.className="w-full py-5 bg-red-900/20 text-red-500 rounded-3xl font-black text-[11px] uppercase cursor-not-allowed italic";
@@ -3892,7 +3931,7 @@
                         if (besoinP > bP) manques.push(`PINNACLE MANQUE ${((besoinP - bP)/tx).toFixed(2)} €`);
                         msgManque3I = "⛔ " + manques.join(' · ');
                     }
-                    btn.innerText = t>0&&vraieSurebet&&fondsInsuffisants3I ? msgManque3I : t>0&&vraieSurebet&&sideSousMin ? `⛔ CÔTÉ ${sideSousMin.n} SOUS LE ${sideSousMin.info.label.toUpperCase().replace('MIN : ', 'MINIMUM ')} — AUGMENTE LA MISE` : t>0&&edgeMangeParArrondi3I ? "⚠️ EDGE MANGÉ PAR L'ARRONDI — AUGMENTE LA MISE" : t>0&&!vraieSurebet ? "PAS DE SUREBET (ARB ≥ 1)" : "DÉFINIR CAPITAL DE RÉFÉRENCE";
+                    btn.innerText = t>0&&vraieSurebet&&softDejaUtilise3I ? `⛔ ${softDejaUtilise3I.toUpperCase()} DÉJÀ UTILISÉ AUJOURD'HUI` : t>0&&vraieSurebet&&fondsInsuffisants3I ? msgManque3I : t>0&&vraieSurebet&&sideSousMin ? `⛔ CÔTÉ ${sideSousMin.n} SOUS LE ${sideSousMin.info.label.toUpperCase().replace('MIN : ', 'MINIMUM ')} — AUGMENTE LA MISE` : t>0&&edgeMangeParArrondi3I ? "⚠️ EDGE MANGÉ PAR L'ARRONDI — AUGMENTE LA MISE" : t>0&&!vraieSurebet ? "PAS DE SUREBET (ARB ≥ 1)" : "DÉFINIR CAPITAL DE RÉFÉRENCE";
                 }
             }
         }
@@ -4057,8 +4096,35 @@
                 setIssues(2); switchMode('standard');
             }
         }
-        function getDailyGoal() { return 3; }
-        function updateGoalDisplay() { const goal = getDailyGoal(); const dots = document.getElementById('goalDots'); dots.innerHTML = ""; for(let i=1; i<=goal; i++){ let d = document.createElement('div'); d.className=`w-2 h-2 rounded-full ${i<=dailyCount?'bg-emerald-500 shadow-[0_0_8px_#10b981]':'bg-slate-800'}`; dots.appendChild(d); } document.getElementById('goalText').innerText = `${dailyCount} / ${goal} Surebets`; }
+        function getDailyGoal() { return 2; }
+        function updateGoalDisplay() { const goal = getDailyGoal(); const dots = document.getElementById('goalDots'); dots.innerHTML = ""; for(let i=1; i<=goal; i++){ let d = document.createElement('div'); d.className=`w-2 h-2 rounded-full ${i<=dailyCount?'bg-emerald-500 shadow-[0_0_8px_#10b981]':'bg-slate-800'}`; dots.appendChild(d); } document.getElementById('goalText').innerText = `${dailyCount} / ${goal} Surebets`; majSuggestionSoftJour(); }
+
+        // Suggère quel soft privilégier pour la PROCHAINE opération du jour — répartir entre
+        // 1xBet et 1Win plutôt que de toujours utiliser le même réduit la fréquence d'activité
+        // sur chaque compte individuellement, cohérent avec la logique anti-détection déjà en
+        // place (zones de wallet). Se base sur les opérations RÉELLEMENT lancées aujourd'hui
+        // (hist, filtré sur la date du jour), jamais un simple compteur théorique.
+        function majSuggestionSoftJour() {
+            const p = document.getElementById('suggestionSoftJour');
+            const btn1xbet = document.getElementById('btn-1xbet');
+            const btn1win = document.getElementById('btn-1win');
+            const dejaUtilise1xbet = nbUtilisationsSoftAujourdHui('1xbet') >= 1;
+            const dejaUtilise1win = nbUtilisationsSoftAujourdHui('1win') >= 1;
+            // Pas de style "désactivé" (opacité/curseur) — les deux boutons restent
+            // pleinement fonctionnels, seule l'alerte elle-même dicte le vrai choix
+            // disponible. Un style visuellement "bloqué" sur un bouton qui fonctionne encore
+            // induirait en erreur.
+            if (!p) return;
+            if (!dejaUtilise1xbet && !dejaUtilise1win) { p.classList.add('hidden'); return; }
+            if (dejaUtilise1xbet && dejaUtilise1win) {
+                p.textContent = `✅ Répartition du jour atteinte — 1xBet et 1Win déjà utilisés une fois chacun.`;
+                p.classList.remove('hidden');
+                return;
+            }
+            const suggere = dejaUtilise1xbet ? '1Win' : '1xBet';
+            p.textContent = `⛔ ${dejaUtilise1xbet ? '1xBet' : '1Win'} déjà utilisé aujourd'hui — seul ${suggere} peut être lancé jusqu'à demain.`;
+            p.classList.remove('hidden');
+        }
 
         // Reset automatique de l'objectif quotidien au changement de jour (date locale),
         // sans attendre un clic manuel sur "Clôturer Journée". N'affecte jamais les wallets
@@ -4502,6 +4568,24 @@
                 bandeau.classList.remove('hidden');
             } else if (jours >= SEUIL_JOURS_SAUVEGARDE) {
                 document.getElementById('bandeauSauvegardeTexte').innerText = `💾 Dernière sauvegarde il y a ${jours} jour${jours > 1 ? 's' : ''} — pense à exporter.`;
+                bandeau.classList.remove('hidden');
+            } else {
+                bandeau.classList.add('hidden');
+            }
+        }
+
+        // Signale toute opération marquée "PENDING" (résultat pas encore renseigné) dans le
+        // journal — sans ce bandeau, une opération oubliée restait invisible à moins
+        // d'ouvrir le journal soi-même par hasard. Elle restaure aussi automatiquement la
+        // zone d'analyse au chargement de page (voir window.onload), ce qui pouvait créer
+        // une zone d'aspect vide/confuse sur le terminal sans qu'on comprenne pourquoi —
+        // ce bandeau rend la cause visible immédiatement plutôt que de la laisser silencieuse.
+        function majBandeauOperationsPending() {
+            const bandeau = document.getElementById('bandeauOperationsPending');
+            if (!bandeau) return;
+            const enAttente = hist.filter(h => h.status === 'PENDING').length;
+            if (enAttente > 0) {
+                document.getElementById('bandeauOperationsPendingTexte').innerText = `⏳ ${enAttente} opération${enAttente > 1 ? 's' : ''} non résolue${enAttente > 1 ? 's' : ''} dans le journal.`;
                 bandeau.classList.remove('hidden');
             } else {
                 bandeau.classList.add('hidden');

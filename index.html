@@ -1330,19 +1330,39 @@
                     const suivanteEstAutreBookmaker = premierMotSuivante && !!detecterRoleBookmaker(premierMotSuivante);
                     if (suivante && !RE_SHOW_ALL.test(suivante) && !RE_EDGE_HEADER.test(suivante)
                         && !suivanteEstAutreBookmaker) {
-                        bloc.ligue = suivante.replace(/vv/gi, m => m[0] === m[0].toUpperCase() ? "W" : "w");
+                        // Une vraie ligne de ligue contient quasi toujours un point après le
+                        // sport ("Hockey sur glace. Russia...") ou correspond à un sport connu ;
+                        // un reste de nom de match coupé par l'OCR sur deux lignes ("...Lokomotiv"
+                        // puis "Yaroslavl" seul juste en dessous) n'a ni point ni mot de sport,
+                        // et c'est la ligne D'APRÈS qui ressemble alors à la vraie ligue. Bug réel
+                        // constaté sans cette distinction : le nom orphelin se faisait passer pour
+                        // la ligue entière, et la vraie ligue restait ignorée plus bas.
+                        const ressembleLigue = (l2) => l2.includes('.') || SPORTS_CONNUS.some(s => normaliserNomSport(l2).includes(normaliserNomSport(s)));
+                        const apresSuivante = lignes[i + 2] || '';
+                        if (!ressembleLigue(suivante) && /^[a-zà-öø-ÿ]{2,20}$/i.test(suivante.trim()) && ressembleLigue(apresSuivante)) {
+                            bloc.match = (bloc.match + ' ' + suivante).trim();
+                            bloc.ligue = apresSuivante.replace(/vv/gi, m => m[0] === m[0].toUpperCase() ? "W" : "w");
+                            i += 2; // consomme le reste du nom ET la vraie ligue, pas seulement l'un des deux
+                        } else {
+                            bloc.ligue = suivante.replace(/vv/gi, m => m[0] === m[0].toUpperCase() ? "W" : "w");
+                        }
                     }
                     meta.blocs.push(bloc);
                     continue;
                 }
 
                 // Repli — ancien format "2 lignes" : nom seul (un seul mot, sans espace),
-                // puis "Équipe A - Équipe B" en dessous. On exige un nom "propre" pour éviter
-                // de confondre une ligne d'en-tête quelconque avec un nom de bookmaker, et on
-                // ignore le cas où la ligne suivante est elle-même une rangée "1 ligne" valide
-                // (sinon elle serait comptée deux fois, une fois ici et une fois à son tour).
+                // puis "Équipe A - Équipe B" en dessous. On exige un nom "propre" ET qu'il
+                // ressemble à un vrai bookmaker connu (même tolérance floue que le format "1
+                // ligne" ci-dessus, via detecterRoleBookmaker) — sinon on ignore la ligne, et
+                // on ignore le cas où la ligne suivante est elle-même une rangée "1 ligne"
+                // valide (sinon elle serait comptée deux fois, une fois ici et une fois à son
+                // tour). Bug réel constaté sans cette vérification de bookmaker : un nom
+                // d'équipe coupé sur deux lignes par l'OCR ("...Lokomotiv" puis "Yaroslavl"
+                // seul sur la ligne suivante) faisait élire "Yaroslavl" bookmaker d'un bloc
+                // fantôme, transformant à tort une alerte 2 issues en 3 issues.
                 const suivante = lignes[i + 1] || '';
-                const estNomBk = /^[a-z0-9][a-z0-9._]{2,14}$/i.test(l);
+                const estNomBk = /^[a-z0-9][a-z0-9._]{2,14}$/i.test(l) && !!detecterRoleBookmaker(l);
                 const suivanteEstRangeeUnique = /\d+[.,]\d{1,3}\s*°?\s*$/.test(suivante);
                 const estLigneMatch = /\S\s*[-–—]\s*\S/.test(suivante)
                     && suivante.replace(/[^a-z0-9]/gi, '').length >= 4;

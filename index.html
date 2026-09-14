@@ -3885,7 +3885,13 @@
             }
         }
 
-        function toggleCompound() { compoundMode = !compoundMode; const btn = document.getElementById('btnCompound'); btn.className = compoundMode ? "bg-emerald-600 text-white border border-emerald-400 px-2 py-0.5 rounded text-[7px] font-black uppercase" : "bg-slate-800 text-slate-500 border border-slate-700 px-2 py-0.5 rounded text-[7px] font-black uppercase"; btn.innerText = compoundMode ? "Mode Composé (ON)" : "Mode Stable (OFF)"; actualiserMiseAuto(); }
+        // Change de base de calcul (capital de référence fixe vs somme réelle des wallets) —
+        // recalcule le montant CFA depuis le MÊME %, PUIS revérifie si ce % reste suffisant
+        // pour les minimums bookmaker de l'alerte en cours avec la nouvelle base. Sans ce
+        // second appel, un % qui passait les minimums en Mode Stable pouvait tomber sous le
+        // seuil Pinnacle en Mode Composé (bases différentes, bug réel constaté) sans que rien
+        // ne le corrige automatiquement — seul le bouton rouge le signalait après coup.
+        function toggleCompound() { compoundMode = !compoundMode; const btn = document.getElementById('btnCompound'); btn.className = compoundMode ? "bg-emerald-600 text-white border border-emerald-400 px-2 py-0.5 rounded text-[7px] font-black uppercase" : "bg-slate-800 text-slate-500 border border-slate-700 px-2 py-0.5 rounded text-[7px] font-black uppercase"; btn.innerText = compoundMode ? "Mode Composé (ON)" : "Mode Stable (OFF)"; actualiserMiseAuto(); ajusterMisePourMinimums(); }
         function actualiserMiseAuto() { 
             const pct = Math.max(1, parseFloat(document.getElementById('misePct').value) || 10) / 100;
             document.getElementById('mise').value = Math.round((compoundMode ? (b1X+bM+bP) : departCap) * pct); 

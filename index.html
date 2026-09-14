@@ -285,9 +285,9 @@
                 </div>
 
                 <div id="rebalancePanel" class="grid grid-cols-3 gap-6">
-                    <div id="card1X" class="glass p-6 rounded-3xl border-l-4 border-blue-400"><p class="text-[9px] text-slate-500 uppercase font-black italic mb-1">Gestion 1xBet — Zone 10–20%</p><p id="flux1X_status" class="text-[10px] font-black uppercase mb-3">SANS DONNÉES</p><p id="flux1X" class="text-2xl font-mono font-black italic">--</p></div>
-                    <div id="cardM" class="glass p-6 rounded-3xl border-l-4 border-blue-600"><p class="text-[9px] text-slate-500 uppercase font-black italic mb-1">Gestion 1Win — Zone 10–20%</p><p id="fluxM_status" class="text-[10px] font-black uppercase mb-3">SANS DONNÉES</p><p id="fluxM" class="text-2xl font-mono font-black italic">--</p></div>
-                    <div id="cardP" class="glass p-6 rounded-3xl border-l-4 border-red-600"><p class="text-[9px] text-slate-500 uppercase font-black italic mb-1">Pinnacle — Réserve Principale</p><p id="fluxP_status" class="text-[10px] font-black uppercase mb-3">SANS DONNÉES</p><p id="fluxP" class="text-2xl font-mono font-black italic">--</p></div>
+                    <div id="card1X" class="glass p-6 rounded-3xl border-l-4 border-blue-400"><p class="text-[9px] text-slate-500 uppercase font-black italic mb-1">Gestion 1xBet — Zone 10–20%</p><p id="flux1X_status" class="text-[10px] font-black uppercase mb-3">SANS DONNÉES</p><p id="flux1X" class="text-2xl font-mono font-black italic">--</p><p id="fluxCible1X" class="text-[8px] text-slate-600 uppercase font-black mt-2 not-italic"></p></div>
+                    <div id="cardM" class="glass p-6 rounded-3xl border-l-4 border-blue-600"><p class="text-[9px] text-slate-500 uppercase font-black italic mb-1">Gestion 1Win — Zone 10–20%</p><p id="fluxM_status" class="text-[10px] font-black uppercase mb-3">SANS DONNÉES</p><p id="fluxM" class="text-2xl font-mono font-black italic">--</p><p id="fluxCibleM" class="text-[8px] text-slate-600 uppercase font-black mt-2 not-italic"></p></div>
+                    <div id="cardP" class="glass p-6 rounded-3xl border-l-4 border-red-600"><p class="text-[9px] text-slate-500 uppercase font-black italic mb-1">Pinnacle — Réserve Principale</p><p id="fluxP_status" class="text-[10px] font-black uppercase mb-3">SANS DONNÉES</p><p id="fluxP" class="text-2xl font-mono font-black italic">--</p><p id="fluxCibleP" class="text-[8px] text-slate-600 uppercase font-black mt-2 not-italic"></p></div>
                 </div>
 
                 <div class="bg-slate-900/40 rounded-3xl p-8 border border-white/5 font-mono">
@@ -382,6 +382,11 @@
             <div id="bandeauAbonnesRisque" class="hidden mx-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl px-5 py-3 flex items-center justify-between gap-3 cursor-pointer not-italic" onclick="toggleAbonnes()">
                 <p id="bandeauAbonnesRisqueTexte" class="text-[10px] font-black text-amber-400 uppercase"></p>
                 <span class="text-[9px] text-amber-500 underline">Voir →</span>
+            </div>
+
+            <div id="bandeauSauvegarde" class="hidden mx-4 bg-blue-500/10 border border-blue-500/30 rounded-2xl px-5 py-3 flex items-center justify-between gap-3 cursor-pointer not-italic" onclick="basculerAffichage()" title="Ouvre le journal, où se trouve le bouton d'export">
+                <p id="bandeauSauvegardeTexte" class="text-[10px] font-black text-blue-400 uppercase"></p>
+                <span class="text-[9px] text-blue-400 underline">Exporter →</span>
             </div>
 
             <div class="flex gap-8 border-b border-white/5 px-4">
@@ -655,6 +660,11 @@
         // le chiffre de janvier dès que février commence.
         let revenuParMois = {};
         let dernierRappelAbonnesEnvoye = null;
+        // Dernier export d'état effectué (voir exporterEtat()) — sert à déclencher un rappel
+        // si aucune sauvegarde n'a été faite depuis trop longtemps, seul filet de sécurité
+        // existant puisque tout vit uniquement dans le stockage local du navigateur.
+        let dernierExportEffectue = null;
+        const SEUIL_JOURS_SAUVEGARDE = 1;
         // Ajoute un paiement au total du mois EN COURS au moment de l'appel — les mois
         // passés dans revenuParMois restent inchangés.
         function enregistrerRevenu(montant) {
@@ -2870,6 +2880,7 @@
             // immédiatement au chargement (pas seulement quand le panneau Abonnés s'ouvre),
             // pour que ce soit visible dès l'arrivée sur le terminal.
             majBandeauAbonnesRisque();
+            majBandeauSauvegarde();
             envoyerRappelAbonnesTelegram();
             // Vérifie fréquemment si on est bien sur la vue terminal (pas abonnés/journal/édition)
             // pour afficher ou masquer le bouton flottant scroll haut/bas — un intervalle court
@@ -2906,18 +2917,14 @@
             }
         });
 
-        // Dépôt/retrait manuel sur un wallet — recalibre automatiquement le capital de
-        // référence à chaque appel (contrairement aux mouvements de solde pendant une
-        // opération, qui touchent b1X/bM/bP directement sans jamais passer par cette
-        // fonction, donc sans jamais déclencher ce recalibrage). Évite les faux
-        // avertissements de zone basés sur un ancien total périmé après un dépôt, sans
-        // dépendre de se souvenir de cliquer "Recalibrer Actifs" à chaque fois.
+        // Dépôt/retrait manuel sur un wallet — modifie SEULEMENT le solde, ne touche plus au
+        // capital de référence automatiquement (retour à l'ancien comportement, annulé sur
+        // demande : l'automatisation gênait pour simuler plusieurs scénarios de capital sans
+        // que la référence ne se réaligne à chaque saisie). Utilise "Recalibrer Actifs" pour
+        // resynchroniser volontairement quand tu veux vraiment que la référence bouge.
         function updateWallet(id, val) {
             const num = parseFloat(val) || 0;
             if(id === '1X') b1X = num; if(id === 'M') bM = num; if(id === 'P') bP = num;
-            departCap = b1X + bM + bP;
-            document.getElementById('inputRefCap').value = Math.floor(departCap);
-            actualiserMiseAuto();
             rafraichir();
             rafraichirVueEnsemble();
         }
@@ -3121,10 +3128,20 @@
             const status = document.getElementById('flux' + s + '_status');
             const val    = document.getElementById('flux' + s);
             const card   = document.getElementById('card' + s);
-            if(departCap === 0) { status.innerText = "SANS DONNÉES"; val.innerText = "--"; return; }
+            const cibleAffichage = document.getElementById('fluxCible' + s);
+            if(departCap === 0) { status.innerText = "SANS DONNÉES"; val.innerText = "--"; if (cibleAffichage) cibleAffichage.innerText = ""; return; }
 
             const misePctActuel = Math.max(1, parseFloat(document.getElementById('misePct')?.value) || 10) / 100;
             const mise1 = departCap * misePctActuel; // 1 mise = % de mise réellement configuré (pas figé à 10%)
+
+            // Affichage permanent du montant cible (répartition de référence 70% Pinnacle /
+            // 15% chaque soft) — visible en continu sur chaque carte, pas seulement quand un
+            // dépôt/retrait est suggéré. N'affecte AUCUN des seuils de zone existants
+            // (10/15/25/30% softs, 50/60/70/85% Pinnacle) — uniquement informatif.
+            if (cibleAffichage) {
+                if (s === 'P') cibleAffichage.innerText = `Cible réf. (70%) : ${Math.round(departCap * 0.70).toLocaleString()} CFA`;
+                else cibleAffichage.innerText = `Cible réf. (15%) : ${Math.round(departCap * 0.15).toLocaleString()} CFA`;
+            }
 
             // ── PINNACLE — Réservoir 5 zones (plancher absolu 50%) ──────
             if (s === 'P') {
@@ -3134,8 +3151,8 @@
                 const pinIdeal       = departCap * 0.85; // fin de zone idéale
                 // > 85% → excédent libre
 
-                const manque1X = Math.max(0, departCap * 0.20 - b1X);
-                const manqueM  = Math.max(0, departCap * 0.20 - bM);
+                const manque1X = Math.max(0, departCap * 0.15 - b1X);
+                const manqueM  = Math.max(0, departCap * 0.15 - bM);
                 const aReinjecter = Math.round(manque1X + manqueM);
 
                 if (actuel < pinCritique) {
@@ -3188,7 +3205,7 @@
             //  Surveillance  25–30%     Retrait partiel conseillé (profil visible)
             //  Danger        > 30%      Retrait immédiat — seuil algo bookmaker
             //
-            //  Cible de référence après tout mouvement : 20% (milieu de zone verte)
+            //  Cible de référence après tout mouvement : 15% (répartition de référence 70/15/15)
             //  Plafond anti-détection : 30% (au-delà, les algos softs signalent)
 
             const horsService  = departCap * 0.10;   // < 10%
@@ -3196,7 +3213,7 @@
             const zoneMin      = departCap * 0.15;   // début zone verte
             const zoneMax      = departCap * 0.25;   // fin zone verte
             const surveillance = departCap * 0.30;   // 25–30%
-            const cible        = departCap * 0.20;   // cible idéale après mouvement
+            const cible        = departCap * 0.15;   // cible idéale après mouvement (répartition de référence)
 
             if (actuel < horsService) {
                 const aDeposer = Math.round(cible - actuel);
@@ -4385,6 +4402,29 @@
         // Rappel Telegram à toi-même — envoyé au maximum 1 fois par jour (jamais à chaque
         // simple rechargement de la page), uniquement s'il y a effectivement quelque chose à
         // traiter. Utilise le même bot que le canal VIP, sur ton propre chat personnel.
+        // Nombre de jours pleins depuis le dernier export — null si jamais exporté du tout
+        // (cas différent de "il y a longtemps" : aucune sauvegarde n'a jamais existé).
+        function joursDepuisDernierExport() {
+            if (!dernierExportEffectue) return null;
+            const diff = Date.now() - new Date(dernierExportEffectue).getTime();
+            return Math.floor(diff / 86400000);
+        }
+
+        function majBandeauSauvegarde() {
+            const bandeau = document.getElementById('bandeauSauvegarde');
+            if (!bandeau) return;
+            const jours = joursDepuisDernierExport();
+            if (jours === null) {
+                document.getElementById('bandeauSauvegardeTexte').innerText = "💾 Aucune sauvegarde exportée pour l'instant — pense à exporter au moins une fois.";
+                bandeau.classList.remove('hidden');
+            } else if (jours >= SEUIL_JOURS_SAUVEGARDE) {
+                document.getElementById('bandeauSauvegardeTexte').innerText = `💾 Dernière sauvegarde il y a ${jours} jour${jours > 1 ? 's' : ''} — pense à exporter.`;
+                bandeau.classList.remove('hidden');
+            } else {
+                bandeau.classList.add('hidden');
+            }
+        }
+
         async function envoyerRappelAbonnesTelegram() {
             const chatId = document.getElementById('telegramRappelChatId')?.value.trim();
             const token = document.getElementById('telegramVipToken')?.value.trim();
@@ -4392,10 +4432,17 @@
             const aujourdHui = new Date().toISOString().slice(0, 10);
             if (dernierRappelAbonnesEnvoye === aujourdHui) return;
             const { aRelancer, expires } = verifierAbonnesARisque();
-            if (aRelancer.length === 0 && expires.length === 0) return;
-            const lignes = ['🔔 Rappel BAG — abonnés à traiter aujourd\'hui :'];
+            const joursSauvegarde = joursDepuisDernierExport();
+            const sauvegardeARappeler = joursSauvegarde === null || joursSauvegarde >= SEUIL_JOURS_SAUVEGARDE;
+            if (aRelancer.length === 0 && expires.length === 0 && !sauvegardeARappeler) return;
+            const lignes = ['🔔 Rappel BAG :'];
             if (aRelancer.length) lignes.push(`\n⏳ À relancer (${aRelancer.length}) : ${aRelancer.map(a => a.nom).join(', ')}`);
             if (expires.length) lignes.push(`\n⛔ Expirés (${expires.length}) : ${expires.map(a => a.nom).join(', ')}`);
+            if (sauvegardeARappeler) {
+                lignes.push(joursSauvegarde === null
+                    ? `\n💾 Aucune sauvegarde exportée pour l'instant — pense à exporter au moins une fois.`
+                    : `\n💾 Dernière sauvegarde il y a ${joursSauvegarde} jour${joursSauvegarde > 1 ? 's' : ''} — pense à exporter.`);
+            }
             const res = await envoyerTelegramVers(token, chatId, lignes.join(''));
             if (res.ok) { dernierRappelAbonnesEnvoye = aujourdHui; sauvegarder(); }
         }
@@ -4636,7 +4683,7 @@
                 calcBaseUrl: document.getElementById('calcBaseUrl')?.value.trim() || '',
                 rappelChatId: document.getElementById('telegramRappelChatId')?.value.trim() || ''
             };
-            return {b1X, bM, bP, hist, departCap, dailyCount, compoundMode, misePct: pct, op, opDeadline, tx, tauxManuel, dernierJourCompteur, telegramConfig, dernierRecapJourAuto, dernierJournalSemaineAuto, dernierRecapMoisAuto, abonnes, envoisDifferes, revenuParMois, listeAttente, dernierRappelAbonnesEnvoye};
+            return {b1X, bM, bP, hist, departCap, dailyCount, compoundMode, misePct: pct, op, opDeadline, tx, tauxManuel, dernierJourCompteur, telegramConfig, dernierRecapJourAuto, dernierJournalSemaineAuto, dernierRecapMoisAuto, abonnes, envoisDifferes, revenuParMois, listeAttente, dernierRappelAbonnesEnvoye, dernierExportEffectue};
         }
 
         function sauvegarder() {
@@ -4657,6 +4704,7 @@
                 envoisDifferes = Array.isArray(s.envoisDifferes) ? s.envoisDifferes : [];
                 listeAttente = Array.isArray(s.listeAttente) ? s.listeAttente : [];
                 dernierRappelAbonnesEnvoye = s.dernierRappelAbonnesEnvoye || null;
+                dernierExportEffectue = s.dernierExportEffectue || null;
                 dernierRecapJourAuto = s.dernierRecapJourAuto || null;
                 dernierJournalSemaineAuto = s.dernierJournalSemaineAuto || null;
                 dernierRecapMoisAuto = s.dernierRecapMoisAuto || null;
@@ -4719,6 +4767,13 @@
         // faire à chaque changement d'appareil pour éviter que les deux divergent en silence
         // (soldes différents, abonnés manquants d'un côté...).
         function exporterEtat() {
+            // Enregistre la date d'export AVANT de construire l'état, pour que le fichier
+            // exporté porte lui-même cette date (utile si on le réimporte ailleurs plus
+            // tard) — et met à jour le bandeau/rappel immédiatement, sans attendre le
+            // prochain chargement de page.
+            dernierExportEffectue = new Date().toISOString().slice(0, 10);
+            sauvegarder();
+            majBandeauSauvegarde();
             const etat = construireEtatComplet();
             const blob = new Blob([JSON.stringify(etat, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);

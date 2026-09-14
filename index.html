@@ -1638,6 +1638,51 @@
                     <details class="mt-1 not-italic"><summary class="cursor-pointer text-slate-600 uppercase font-black text-[8px]">Voir le texte brut lu par l'OCR (vérification manuelle)</summary><pre class="whitespace-pre-wrap text-[8px] text-slate-500 mt-1 bg-black/40 p-2 rounded-lg">${escapeHtml(meta.texteBrut)}</pre></details>
                 `;
             }
+            ajusterMisePourMinimums();
+        }
+
+        // Prérempli SYSTÉMATIQUEMENT la mise% au minimum nécessaire pour que CETTE opération
+        // précise dépasse les minimums de chaque bookmaker impliqué (500 CFA softs, 5€
+        // Pinnacle) — à chaque alerte, sans condition. Reste ensuite librement modifiable :
+        // ce n'est qu'un point de départ, pas une valeur imposée.
+        function ajusterMisePourMinimums() {
+            const base = compoundMode ? (b1X + bM + bP) : departCap;
+            if (!base || base <= 0) return;
+
+            let tMinRequis = 0;
+            if (issuesMode === 2) {
+                const cs = lireCote('coteS'), cp = lireCote('coteP');
+                if (!(cs > 1) || !(cp > 1) || !softSelected) return;
+                const arb = (1/cs) + (1/cp);
+                const pctSoft = (1/cs)/arb, pctPin = (1/cp)/arb;
+                const minSoft = minPourBookmaker(softSelected);
+                const minPin = minPourBookmaker('pinnacle');
+                if (minSoft) tMinRequis = Math.max(tMinRequis, minSoft.valeur / pctSoft);
+                if (minPin) tMinRequis = Math.max(tMinRequis, (minPin.valeur * tx) / pctPin);
+            } else {
+                const cotes = [lireCote('cote1'), lireCote('cote2'), lireCote('cote3')];
+                if (cotes.some(c => !(c > 1))) return;
+                const arb = cotes.reduce((som, c) => som + 1/c, 0);
+                [1, 2, 3].forEach(n => {
+                    const role = bkSel[n];
+                    if (!role) return;
+                    const pct = (1/cotes[n-1]) / arb;
+                    const info = minPourBookmaker(role);
+                    if (!info) return;
+                    const valeurCFA = role === 'pinnacle' ? info.valeur * tx : info.valeur;
+                    tMinRequis = Math.max(tMinRequis, valeurCFA / pct);
+                });
+            }
+            if (tMinRequis <= 0) return;
+
+            // Petite marge de sécurité (5%) pour absorber l'arrondi réel des mises — sans
+            // elle, un montant tout juste à la limite du minimum pourrait encore échouer
+            // après arrondi au multiple de 50 CFA le plus proche.
+            const pctRecommande = (tMinRequis * 1.05 / base) * 100;
+            const pctArrondi = Math.ceil(pctRecommande * 10) / 10; // arrondi au 0.1% supérieur
+            document.getElementById('misePct').value = pctArrondi;
+            actualiserMiseAuto();
+            afficherToast(`📐 Mise préremplie à ${pctArrondi}% — le minimum pour cette opération. Modifiable librement si tu veux miser plus.`, 'info');
         }
 
         // Agrandit l'image collée (x2.5, fond blanc, léger contraste) avant OCR. Les

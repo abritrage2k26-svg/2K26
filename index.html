@@ -1480,18 +1480,20 @@
             // sinon, coller une NOUVELLE alerte dont l'OCR rate un champ laisserait traîner la
             // valeur de l'alerte PRÉCÉDENTE sans que ce soit visible — un mauvais match affiché
             // à tes abonnés sans que tu le remarques, pire qu'une absence d'info.
-            const premierBlocAvecMatch = meta.blocs.find(b => b.match) || null;
-            // Pour la ligue spécifiquement : priorité au bloc du SOFT (1xBet/1Win), pas
-            // simplement le premier bloc qui en a une — Pinnacle apparaît généralement en
-            // premier dans l'alerte et sa ligue diffère souvent légèrement de celle du soft
-            // (ex. "Hockey sur glace. Russia..." vs "Ice Hockey. Kontinental..."), donc
-            // prendre "le premier" revenait presque toujours à prendre celle de Pinnacle par
-            // accident. Si le bloc du soft n'a pas capturé sa ligue, on retombe sur n'importe
-            // quel autre bloc qui en a une plutôt que de laisser le champ vide.
-            const blocSoftPourLigue = meta.blocs.find(b => {
+            // Pour le match ET la ligue : priorité au bloc du SOFT (1xBet/1Win), pas
+            // simplement le premier bloc rencontré — Pinnacle apparaît généralement en
+            // premier dans l'alerte, et son texte de match/ligue diffère parfois légèrement
+            // de celui du soft (ex. nom d'équipe complet "HC Traktor Chelyabinsk" côté
+            // Pinnacle vs "Traktor Chelyabinsk" côté soft). Prendre "le premier" revenait
+            // presque toujours à prendre celui de Pinnacle par accident. Si le bloc du soft
+            // n'a pas capturé l'info, on retombe sur n'importe quel autre bloc qui l'a plutôt
+            // que de laisser le champ vide.
+            const blocSoft = meta.blocs.find(b => {
                 const role = detecterRoleBookmaker(b.bookmaker);
-                return role && role !== 'pinnacle' && b.ligue;
+                return role && role !== 'pinnacle';
             });
+            const premierBlocAvecMatch = (blocSoft && blocSoft.match ? blocSoft : null) || meta.blocs.find(b => b.match) || null;
+            const blocSoftPourLigue = blocSoft && blocSoft.ligue ? blocSoft : null;
             const premierBlocAvecLigue = blocSoftPourLigue || meta.blocs.find(b => b.ligue) || null;
             const champSport = document.getElementById('manualAlSport');
             const champMatch = document.getElementById('manualAlMatch');

@@ -164,11 +164,9 @@
                         <input type="text" id="aboNom" placeholder="Nom / @Telegram" class="col-span-2 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-[11px] text-white outline-none focus:border-violet-500">
                         <input type="text" id="aboWhatsapp" value="225" placeholder="WhatsApp (ex: 2250700000000)" class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-[11px] text-white outline-none focus:border-violet-500">
                         <select id="aboFormule" onchange="calculerExpirationAuto(); preremplirMontantAbo();" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-3 text-[11px] text-white outline-none focus:border-violet-500">
-                            <option value="7">Hebdo (7j)</option>
-                            <option value="30" selected>Mensuel (30j)</option>
-                            <option value="90">Trimestriel (90j)</option>
+                            <option value="7" selected>Hebdo (7j)</option>
                         </select>
-                        <input type="number" id="aboMontant" value="15000" placeholder="Montant CFA" class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-[11px] text-white outline-none focus:border-violet-500">
+                        <input type="number" id="aboMontant" value="5000" placeholder="Montant CFA" class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-[11px] text-white outline-none focus:border-violet-500">
                         <input type="date" id="aboDatePaiement" onchange="calculerExpirationAuto()" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-3 text-[11px] text-white outline-none focus:border-violet-500">
                         <button onclick="ajouterAbonne()" class="bg-violet-600 text-white rounded-xl px-4 py-3 text-[10px] font-black uppercase hover:bg-violet-500">Ajouter</button>
                     </div>
@@ -654,6 +652,18 @@
         <div id="boutonScrollTerminal" class="fixed bottom-6 right-6 z-[500] flex flex-col gap-2" style="display:none;">
             <button onclick="window.scrollTo({top:0, behavior:'smooth'})" class="w-11 h-11 rounded-full bg-slate-900/90 border border-emerald-600/30 text-emerald-400 shadow-lg backdrop-blur flex items-center justify-center text-lg hover:bg-slate-800 hover:border-emerald-500/50 transition-all" title="Remonter tout en haut">▲</button>
             <button onclick="window.scrollTo({top:document.body.scrollHeight, behavior:'smooth'})" class="w-11 h-11 rounded-full bg-slate-900/90 border border-emerald-600/30 text-emerald-400 shadow-lg backdrop-blur flex items-center justify-center text-lg hover:bg-slate-800 hover:border-emerald-500/50 transition-all" title="Descendre tout en bas">▼</button>
+        </div>
+
+        <!-- Navigation flottante entre les 3 vues principales — visible EN PERMANENCE,
+             peu importe la vue actuelle (contrairement au bouton scroll, réservé au
+             terminal). z-[10000] pour rester au-dessus du journal et des abonnés
+             (z-9999/9998), tout en restant sous la modale de confirmation et l'écran de
+             verrouillage (z-10001/999999) pour ne jamais les recouvrir. Placé dans
+             #appContent pour disparaître avec le reste pendant le camouflage. -->
+        <div class="fixed bottom-6 left-6 z-[10000] flex flex-col gap-2">
+            <button onclick="allerTerminal()" class="w-11 h-11 rounded-full bg-slate-900/90 border border-emerald-600/30 text-emerald-400 shadow-lg backdrop-blur flex items-center justify-center text-lg hover:bg-slate-800 hover:border-emerald-500/50 transition-all" title="Terminal">🧮</button>
+            <button onclick="allerJournal()" class="w-11 h-11 rounded-full bg-slate-900/90 border border-blue-500/30 text-blue-400 shadow-lg backdrop-blur flex items-center justify-center text-lg hover:bg-slate-800 hover:border-blue-500/50 transition-all" title="Journal">📊</button>
+            <button onclick="allerAbonnes()" class="w-11 h-11 rounded-full bg-slate-900/90 border border-violet-500/30 text-violet-400 shadow-lg backdrop-blur flex items-center justify-center text-lg hover:bg-slate-800 hover:border-violet-500/50 transition-all" title="Abonnés">👥</button>
         </div>
     </div>
 
@@ -2759,7 +2769,7 @@
         }
 
         async function resetTotalSystem() {
-            if(await confirmerPersonnalise("Attention, vous allez effacer TOUTES les données (soldes, historique, objectifs, abonnés). Confirmer ?")) {
+            if(await confirmerPersonnalise("Attention, vous allez effacer TOUTES les données (soldes, historique, objectifs, abonnés, revenu, liste d'attente). La config Telegram reste intacte. Confirmer ?")) {
                 localStorage.removeItem('babi_corp_mission');
                 b1X = 0; bM = 0; bP = 0;
                 hist = [];
@@ -2771,6 +2781,15 @@
                 dernierJournalSemaineAuto = null;
                 dernierRecapMoisAuto = null;
                 abonnes = [];
+                // Champs ajoutés après la première version de ce bouton — sans ça, ils
+                // restaient en mémoire et revenaient automatiquement dès la sauvegarde
+                // suivante, rendant "Réinitialiser TOUT" trompeur par rapport à son nom.
+                // La config Telegram (tokens, chat IDs), elle, reste volontairement intacte —
+                // pas de raison de forcer à tout retaper après un reset.
+                revenuParMois = {};
+                listeAttente = [];
+                dernierExportEffectue = null;
+                dernierRappelAbonnesEnvoye = null;
 
                 // Annuler toute opération en cours (fonds réservés, minuteur actif). Sans ceci,
                 // l'objet "op" et son minuteur survivaient à la réinitialisation : à l'expiration
@@ -2812,6 +2831,7 @@
                 rafraichirVueEnsemble();
                 rafraichirAbonnes();
                 updateGoalDisplay();
+                majBandeauSauvegarde();
                 afficherToast("Système entièrement réinitialisé.", 'info');
             }
         }
@@ -4147,15 +4167,36 @@
         }
         function basculerAffichage() { 
             const ens = document.getElementById('vueEnsemble'); 
-            if(ens.style.display==='block'){ 
-                ens.style.display='none'; 
-                document.getElementById('mainApp').classList.remove('hidden-app'); 
-            } else { 
-                ens.style.display='block'; 
-                document.getElementById('mainApp').classList.add('hidden-app'); 
-                rafraichirVueEnsemble(); 
-                setTimeout(() => { if(chartEquityInstance) { chartEquityInstance.update(); chartEfficienceInstance.update(); chartLatenceInstance.update(); } }, 50);
-            } 
+            if(ens.style.display==='block') allerTerminal(); else allerJournal();
+        }
+
+        // Navigation flottante entre les 3 vues — contrairement à basculerAffichage() et
+        // toggleAbonnes() (de simples bascules à 2 états, qui peuvent laisser deux vues
+        // ouvertes en même temps si on bascule depuis une TROISIÈME vue), ces fonctions
+        // ferment TOUJOURS les deux autres avant d'ouvrir la cible, quel que soit le point
+        // de départ. Réutilisées aussi par basculerAffichage()/toggleAbonnes() en interne
+        // pour ne jamais faire diverger les deux mécanismes de navigation.
+        function allerTerminal() {
+            document.getElementById('vueEnsemble').style.display = 'none';
+            document.getElementById('panelAbonnes').style.display = 'none';
+            document.getElementById('mainApp').classList.remove('hidden-app');
+            majBoutonScrollTerminal();
+        }
+        function allerJournal() {
+            document.getElementById('panelAbonnes').style.display = 'none';
+            document.getElementById('mainApp').classList.add('hidden-app');
+            document.getElementById('vueEnsemble').style.display = 'block';
+            rafraichirVueEnsemble();
+            setTimeout(() => { if(chartEquityInstance) { chartEquityInstance.update(); chartEfficienceInstance.update(); chartLatenceInstance.update(); } }, 50);
+        }
+        function allerAbonnes() {
+            document.getElementById('vueEnsemble').style.display = 'none';
+            document.getElementById('mainApp').classList.add('hidden-app');
+            document.getElementById('panelAbonnes').style.display = 'block';
+            if (!document.getElementById('aboDatePaiement').value) {
+                document.getElementById('aboDatePaiement').value = new Date().toISOString().slice(0, 10);
+            }
+            rafraichirAbonnes();
         }
 
         // ══════════════════════════════════════════════════════════════════
@@ -4176,15 +4217,7 @@
         function toggleAbonnes() {
             const panel = document.getElementById('panelAbonnes');
             const visible = panel.style.display === 'block';
-            panel.style.display = visible ? 'none' : 'block';
-            document.getElementById('mainApp').classList.toggle('hidden-app', !visible);
-            document.getElementById('vueEnsemble').style.display = 'none';
-            if (!visible) {
-                if (!document.getElementById('aboDatePaiement').value) {
-                    document.getElementById('aboDatePaiement').value = new Date().toISOString().slice(0, 10);
-                }
-                rafraichirAbonnes();
-            }
+            if (visible) allerTerminal(); else allerAbonnes();
         }
 
         // Tarifs actuels par formule — pré-remplit le montant dès qu'on change la formule,

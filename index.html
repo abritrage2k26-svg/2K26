@@ -508,6 +508,7 @@
                                 <input type="text" id="manualAlMatch" placeholder="Match (ex. Équipe A - Équipe B)" class="w-full bg-slate-900 p-2.5 rounded-lg border border-white/5 text-[10px] outline-none">
                                 <input type="text" id="manualAlLigue" placeholder="Ligue / compétition" class="w-full bg-slate-900 p-2.5 rounded-lg border border-white/5 text-[10px] outline-none">
                                 <input type="text" id="manualAlMarche" list="listeMarchesSpeciaux" placeholder="Marché si spécial (ex. Corners, 1re mi-temps)" class="w-full bg-slate-900 p-2.5 rounded-lg border border-white/5 text-[10px] outline-none">
+                                <p id="indicateurDnbTennis" class="hidden text-[8px] text-amber-400 font-black uppercase not-italic mt-1">🎾 DNB au tennis = vainqueur du match — sur Pinnacle, cherche directement le nom du joueur, pas "DNB".</p>
                                 <datalist id="listeMarchesSpeciaux">
                                     <option value="1re mi-temps">
                                     <option value="2e mi-temps">
@@ -1705,6 +1706,20 @@
                 `;
             }
             ajusterMisePourMinimums();
+            majIndicateurDnbTennis(meta);
+        }
+
+        // Signale les alertes tennis dont le marché est codé "DNB" (Draw No Bet) — un code
+        // technique que 1xBet réutilise même au tennis, où il n'a pourtant aucune utilité
+        // réelle (pas de match nul possible) : il se comporte simplement comme un vainqueur
+        // du match classique. Sur Pinnacle/ps3838, ce marché n'existe pas sous ce nom — il
+        // faut chercher directement le nom du joueur. Purement informatif, ne bloque rien.
+        function majIndicateurDnbTennis(meta) {
+            const p = document.getElementById('indicateurDnbTennis');
+            if (!p) return;
+            const estTennis = meta.sport && normaliserNomSport(meta.sport).includes('tennis');
+            const aUnMarcheDnb = meta.blocs.some(b => /dnb/i.test(b.marche || ''));
+            p.classList.toggle('hidden', !(estTennis && aUnMarcheDnb));
         }
 
         // Prérempli SYSTÉMATIQUEMENT la mise% au minimum nécessaire pour que CETTE opération

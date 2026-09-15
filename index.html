@@ -463,9 +463,22 @@
                     <button onclick="testerTelegramVip()" class="bg-amber-700/30 text-amber-300 border border-amber-600/40 px-4 py-2 rounded-xl font-black text-[9px] uppercase hover:bg-amber-700/50">Tester</button>
                 </div>
                 <div class="mt-4 pt-4 border-t border-white/5">
-                    <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">🔔 Rappel abonnés à toi-même (optionnel)</p>
+                    <div class="flex items-center justify-between gap-4 flex-wrap mb-2">
+                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest">🔔 Rappel abonnés à toi-même (optionnel)</p>
+                        <label class="flex items-center gap-2 text-[9px] font-black text-slate-400 uppercase cursor-pointer">
+                            <input type="checkbox" id="rappelAbonnesActif" checked onchange="sauvegarderConfigTelegram(); majBandeauAbonnesRisque();" class="accent-amber-500 w-4 h-4">
+                            Activer ce rappel
+                        </label>
+                    </div>
                     <input type="text" id="telegramRappelChatId" placeholder="Ton propre chat ID Telegram (ex. ton ID personnel avec le bot)" onchange="sauvegarderConfigTelegram()" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-[10px] text-white outline-none focus:border-amber-500">
                     <p class="text-[8px] text-slate-600 mt-1 italic">Utilise le même bot que le canal VIP — un message t'est envoyé ici (1x/jour max) s'il y a des abonnés à relancer ou expirés.</p>
+                </div>
+                <div class="mt-4 pt-4 border-t border-white/5">
+                    <label class="flex items-center gap-2 text-[9px] font-black text-slate-400 uppercase cursor-pointer">
+                        <input type="checkbox" id="rappelSauvegardeActif" checked onchange="sauvegarderConfigTelegram(); majBandeauSauvegarde();" class="accent-amber-500 w-4 h-4">
+                        💾 Activer le rappel de sauvegarde (bandeau + Telegram)
+                    </label>
+                    <p class="text-[8px] text-slate-600 mt-1 italic">Décoche pour ne plus jamais voir ce rappel — utile si tu utilises l'app seul sans besoin de sauvegarder régulièrement.</p>
                 </div>
             </div>
 
@@ -4629,6 +4642,12 @@
         function majBandeauAbonnesRisque() {
             const bandeau = document.getElementById('bandeauAbonnesRisque');
             if (!bandeau) return;
+            // Case à cocher dédiée — décochée, ce bandeau ne doit plus jamais apparaître,
+            // peu importe le nombre d'abonnés à relancer ou expirés.
+            if (!document.getElementById('rappelAbonnesActif')?.checked) {
+                bandeau.classList.add('hidden');
+                return;
+            }
             const { aRelancer, expires } = verifierAbonnesARisque();
             if (aRelancer.length === 0 && expires.length === 0) { bandeau.classList.add('hidden'); return; }
             const parties = [];
@@ -4652,6 +4671,12 @@
         function majBandeauSauvegarde() {
             const bandeau = document.getElementById('bandeauSauvegarde');
             if (!bandeau) return;
+            // Case à cocher dédiée — décochée, ce bandeau ne doit plus jamais apparaître,
+            // peu importe depuis combien de temps la dernière sauvegarde date.
+            if (!document.getElementById('rappelSauvegardeActif')?.checked) {
+                bandeau.classList.add('hidden');
+                return;
+            }
             const jours = joursDepuisDernierExport();
             if (jours === null) {
                 document.getElementById('bandeauSauvegardeTexte').innerText = "💾 Aucune sauvegarde exportée pour l'instant — pense à exporter au moins une fois.";
@@ -4688,9 +4713,16 @@
             if (!chatId || !token) return;
             const aujourdHui = new Date().toISOString().slice(0, 10);
             if (dernierRappelAbonnesEnvoye === aujourdHui) return;
-            const { aRelancer, expires } = verifierAbonnesARisque();
+            // Respecte la même case à cocher que le bandeau abonnés — décochée, ce volet du
+            // message ne doit jamais s'inclure, même si des abonnés sont réellement à
+            // relancer ou expirés.
+            const rappelAbonnesActif = document.getElementById('rappelAbonnesActif')?.checked;
+            const { aRelancer, expires } = rappelAbonnesActif ? verifierAbonnesARisque() : { aRelancer: [], expires: [] };
+            // Respecte la même case à cocher que le bandeau — décochée, ce volet du message
+            // ne doit jamais s'inclure, même si techniquement une sauvegarde est en retard.
+            const rappelSauvegardeActif = document.getElementById('rappelSauvegardeActif')?.checked;
             const joursSauvegarde = joursDepuisDernierExport();
-            const sauvegardeARappeler = joursSauvegarde === null || joursSauvegarde >= SEUIL_JOURS_SAUVEGARDE;
+            const sauvegardeARappeler = rappelSauvegardeActif && (joursSauvegarde === null || joursSauvegarde >= SEUIL_JOURS_SAUVEGARDE);
             if (aRelancer.length === 0 && expires.length === 0 && !sauvegardeARappeler) return;
             const lignes = ['🔔 Rappel BAG :'];
             if (aRelancer.length) lignes.push(`\n⏳ À relancer (${aRelancer.length}) : ${aRelancer.map(a => a.nom).join(', ')}`);
@@ -4938,7 +4970,9 @@
                 vipToken: document.getElementById('telegramVipToken')?.value.trim() || '',
                 vipChatId: document.getElementById('telegramVipChatId')?.value.trim() || '',
                 calcBaseUrl: document.getElementById('calcBaseUrl')?.value.trim() || '',
-                rappelChatId: document.getElementById('telegramRappelChatId')?.value.trim() || ''
+                rappelChatId: document.getElementById('telegramRappelChatId')?.value.trim() || '',
+                rappelAbonnesActif: document.getElementById('rappelAbonnesActif')?.checked !== false,
+                rappelSauvegardeActif: document.getElementById('rappelSauvegardeActif')?.checked !== false
             };
             return {b1X, bM, bP, hist, departCap, dailyCount, compoundMode, misePct: pct, op, opDeadline, tx, tauxManuel, dernierJourCompteur, telegramConfig, dernierRecapJourAuto, dernierJournalSemaineAuto, dernierRecapMoisAuto, abonnes, envoisDifferes, revenuParMois, listeAttente, dernierRappelAbonnesEnvoye, dernierExportEffectue};
         }
@@ -4996,6 +5030,8 @@
                     if (document.getElementById('telegramVipChatId')) document.getElementById('telegramVipChatId').value = tc.vipChatId || '';
                     if (document.getElementById('calcBaseUrl')) document.getElementById('calcBaseUrl').value = tc.calcBaseUrl || '';
                     if (document.getElementById('telegramRappelChatId')) document.getElementById('telegramRappelChatId').value = tc.rappelChatId || '';
+                    if (document.getElementById('rappelAbonnesActif')) document.getElementById('rappelAbonnesActif').checked = tc.rappelAbonnesActif !== false;
+                    if (document.getElementById('rappelSauvegardeActif')) document.getElementById('rappelSauvegardeActif').checked = tc.rappelSauvegardeActif !== false;
                 }
                 majStatutTelegram();
                 majStatutTelegramVip();

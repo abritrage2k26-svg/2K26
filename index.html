@@ -1381,6 +1381,11 @@
                             bloc.ligue = suivante.replace(/vv/gi, m => m[0] === m[0].toUpperCase() ? "W" : "w");
                         }
                     }
+                    // Nettoyage final, quel que soit le chemin emprunté ci-dessus : un
+                    // qualificatif de marché ("+OT", "+AP"...) resté collé au nom du match
+                    // (recollage ci-dessus, ou directement présent sur la ligne d'origine)
+                    // n'a rien à faire dans le contexte du signal affiché.
+                    bloc.match = bloc.match.replace(/\s*\+[a-zà-öø-ÿ]{1,10}$/i, '').trim();
                     meta.blocs.push(bloc);
                     continue;
                 }
@@ -1401,7 +1406,7 @@
                 const estLigneMatch = /\S\s*[-–—]\s*\S/.test(suivante)
                     && suivante.replace(/[^a-z0-9]/gi, '').length >= 4;
                 if (estNomBk && estLigneMatch && !suivanteEstRangeeUnique) {
-                    const bloc = { bookmaker: l, match: suivante, ligue: '', marche: '', cote: null };
+                    const bloc = { bookmaker: l, match: suivante.replace(/\s*\+[a-zà-öø-ÿ]{1,10}$/i, '').trim(), ligue: '', marche: '', cote: null };
                     if (lignes[i + 2] && !/^\d+[.,]\d{2,3}$/.test(lignes[i + 2])) bloc.ligue = lignes[i + 2].replace(/vv/gi, m => m[0] === m[0].toUpperCase() ? 'W' : 'w');
                     for (let j = i + 2; j <= i + 4 && j < lignes.length; j++) {
                         const mc = lignes[j].match(/^(.{0,15}?)\s*(\d+[.,]\d{2,3})\s*$/);

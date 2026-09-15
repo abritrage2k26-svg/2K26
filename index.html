@@ -409,6 +409,7 @@
                         <p class="text-[10px] font-black text-emerald-500 uppercase tracking-widest italic">📋 Coller une alerte BreakingBet ici (Ctrl+V)</p>
                         <p id="ocrStatus" class="text-[9px] text-slate-500 font-black uppercase italic mt-1">En attente d'une capture...</p>
                     </div>
+                    <button type="button" onclick="event.stopPropagation(); collerDepuisBouton()" class="bg-emerald-600/20 text-emerald-400 border border-emerald-500/40 px-4 py-2 rounded-xl text-[9px] font-black uppercase not-italic hover:bg-emerald-600/30 transition-all">📋 Coller</button>
                     <img id="ocrPreview" class="hidden h-16 rounded-lg border border-white/10 object-cover">
                 </div>
                 <div id="ocrResume" class="text-[9px] text-slate-400 italic mt-3 space-y-1"></div>
@@ -1480,13 +1481,18 @@
             // valeur de l'alerte PRÉCÉDENTE sans que ce soit visible — un mauvais match affiché
             // à tes abonnés sans que tu le remarques, pire qu'une absence d'info.
             const premierBlocAvecMatch = meta.blocs.find(b => b.match) || null;
-            // Pour la ligue spécifiquement : cherche dans TOUS les blocs, pas seulement le
-            // premier avec un match. Si le premier bloc n'a pas réussi à capturer sa ligue
-            // (ligne suivante non reconnue par l'OCR) alors qu'un AUTRE bloc l'a bien capturée,
-            // on ne veut pas laisser le champ vide alors que l'info existe ailleurs dans
-            // l'alerte — le match affiché vient toujours du premier bloc, mais la ligue peut
-            // venir de n'importe lequel, c'est la même compétition pour tous les blocs.
-            const premierBlocAvecLigue = meta.blocs.find(b => b.ligue) || null;
+            // Pour la ligue spécifiquement : priorité au bloc du SOFT (1xBet/1Win), pas
+            // simplement le premier bloc qui en a une — Pinnacle apparaît généralement en
+            // premier dans l'alerte et sa ligue diffère souvent légèrement de celle du soft
+            // (ex. "Hockey sur glace. Russia..." vs "Ice Hockey. Kontinental..."), donc
+            // prendre "le premier" revenait presque toujours à prendre celle de Pinnacle par
+            // accident. Si le bloc du soft n'a pas capturé sa ligue, on retombe sur n'importe
+            // quel autre bloc qui en a une plutôt que de laisser le champ vide.
+            const blocSoftPourLigue = meta.blocs.find(b => {
+                const role = detecterRoleBookmaker(b.bookmaker);
+                return role && role !== 'pinnacle' && b.ligue;
+            });
+            const premierBlocAvecLigue = blocSoftPourLigue || meta.blocs.find(b => b.ligue) || null;
             const champSport = document.getElementById('manualAlSport');
             const champMatch = document.getElementById('manualAlMatch');
             const champLigue = document.getElementById('manualAlLigue');
@@ -1856,21 +1862,15 @@
             statusEl.className = meta.blocs.length ? "text-[9px] text-emerald-400 font-black uppercase italic mt-1" : "text-[9px] text-amber-400 font-black uppercase italic mt-1";
         }
 
-        async function handleBreakingBetPaste(e) {
-            e.preventDefault();
-            const items = (e.clipboardData || window.clipboardData)?.items || [];
-            let imageItem = null;
-            for (const item of items) { if (item.type.indexOf('image') !== -1) { imageItem = item; break; } }
-            const statusEl = document.getElementById('ocrStatus');
-            if (!imageItem) {
-                statusEl.innerText = "⚠️ Aucune image détectée dans le collage.";
-                statusEl.className = "text-[9px] text-red-400 font-black uppercase italic mt-1";
-                return;
-            }
-            const blob = imageItem.getAsFile();
+        // Logique de traitement partagée entre le collage classique (Ctrl+V / menu contextuel
+        // mobile) et le bouton "Coller" explicite ci-dessous — un seul endroit à maintenir
+        // pour tout ce qui se passe une fois l'image récupérée, peu importe comment elle l'a
+        // été.
+        async function traiterImageBreakingBet(blob) {
             const previewEl = document.getElementById('ocrPreview');
             previewEl.src = URL.createObjectURL(blob);
             previewEl.classList.remove('hidden');
+            const statusEl = document.getElementById('ocrStatus');
             statusEl.innerText = "⏳ Lecture OCR en cours...";
             statusEl.className = "text-[9px] text-amber-400 font-black uppercase italic mt-1";
             document.getElementById('ocrResume').innerHTML = '';
@@ -1882,9 +1882,6 @@
                     statusEl.className = "text-[9px] text-red-400 font-black uppercase italic mt-1";
                     return;
                 }
-                // Une capture peut contenir plusieurs alertes empilées (liste BreakingBet) —
-                // on les détecte toutes et on laisse choisir plutôt que de silencieusement
-                // ignorer tout ce qui suit la première, comme le faisait l'ancienne logique.
                 const segments = decouperEnAlertes(meta.texteBrut);
                 const metasValides = segments.length > 1
                     ? segments.map(s => parserAlerteBreakingBet(s)).filter(m => m.blocs.length > 0)
@@ -1903,6 +1900,48 @@
                 statusEl.className = "text-[9px] text-red-400 font-black uppercase italic mt-1";
             }
         }
+
+        async function handleBreakingBetPaste(e) {
+            e.preventDefault();
+            const items = (e.clipboardData || window.clipboardData)?.items || [];
+            let imageItem = null;
+            for (const item of items) { if (item.type.indexOf('image') !== -1) { imageItem = item; break; } }
+            const statusEl = document.getElementById('ocrStatus');
+            if (!imageItem) {
+                statusEl.innerText = "⚠️ Aucune image détectée dans le collage.";
+                statusEl.className = "text-[9px] text-red-400 font-black uppercase italic mt-1";
+                return;
+            }
+            await traiterImageBreakingBet(imageItem.getAsFile());
+        }
+
+        // Bouton "Coller" explicite — lit directement le presse-papier via l'API Clipboard,
+        // un seul tap au lieu du geste multi-étapes (appui long → sélection → menu → Coller)
+        // parfois peu fiable sur mobile selon le navigateur. Nécessite un contexte sécurisé
+        // (HTTPS) — indisponible en local sur file://, comme d'autres API déjà rencontrées ;
+        // le message d'erreur renvoie alors simplement vers le collage manuel classique,
+        // qui lui continue de fonctionner partout.
+        async function collerDepuisBouton() {
+            const statusEl = document.getElementById('ocrStatus');
+            try {
+                const items = await navigator.clipboard.read();
+                let imageBlob = null;
+                for (const item of items) {
+                    const type = item.types.find(t => t.startsWith('image/'));
+                    if (type) { imageBlob = await item.getType(type); break; }
+                }
+                if (!imageBlob) {
+                    statusEl.innerText = "⚠️ Aucune image dans le presse-papier — copie d'abord une capture BreakingBet.";
+                    statusEl.className = "text-[9px] text-red-400 font-black uppercase italic mt-1";
+                    return;
+                }
+                await traiterImageBreakingBet(imageBlob);
+            } catch (err) {
+                statusEl.innerText = "⚠️ Presse-papier inaccessible ici — colle manuellement dans la zone (appui long → Coller).";
+                statusEl.className = "text-[9px] text-red-400 font-black uppercase italic mt-1";
+            }
+        }
+
 
         function toggleAlertDetail(index) {
             const row = document.getElementById('detail-' + index);

@@ -1363,13 +1363,17 @@
                         // Une vraie ligne de ligue contient quasi toujours un point après le
                         // sport ("Hockey sur glace. Russia...") ou correspond à un sport connu ;
                         // un reste de nom de match coupé par l'OCR sur deux lignes ("...Lokomotiv"
-                        // puis "Yaroslavl" seul juste en dessous) n'a ni point ni mot de sport,
-                        // et c'est la ligne D'APRÈS qui ressemble alors à la vraie ligue. Bug réel
-                        // constaté sans cette distinction : le nom orphelin se faisait passer pour
-                        // la ligue entière, et la vraie ligue restait ignorée plus bas.
+                        // puis "Yaroslavl" seul juste en dessous, ou "...Philadelphia" puis
+                        // "Phillies +OT" avec un qualificatif de marché en plus) n'a ni point ni
+                        // mot de sport, et c'est la ligne D'APRÈS qui ressemble alors à la vraie
+                        // ligue. Bug réel constaté sans cette distinction : le nom orphelin se
+                        // faisait passer pour la ligue entière, et la vraie ligue restait ignorée
+                        // plus bas. Le qualificatif optionnel ("+OT", "+AP"...) est toléré en fin
+                        // de ligne — sinon "Phillies +OT" échouait le test (espace + "+" non
+                        // reconnus) et retombait dans le même piège que "Yaroslavl" seul.
                         const ressembleLigue = (l2) => l2.includes('.') || SPORTS_CONNUS.some(s => normaliserNomSport(l2).includes(normaliserNomSport(s)));
                         const apresSuivante = lignes[i + 2] || '';
-                        if (!ressembleLigue(suivante) && /^[a-zà-öø-ÿ]{2,20}$/i.test(suivante.trim()) && ressembleLigue(apresSuivante)) {
+                        if (!ressembleLigue(suivante) && /^[a-zà-öø-ÿ]{2,20}(\s*\+[a-zà-öø-ÿ]{1,10})?$/i.test(suivante.trim()) && ressembleLigue(apresSuivante)) {
                             bloc.match = (bloc.match + ' ' + suivante).trim();
                             bloc.ligue = apresSuivante.replace(/vv/gi, m => m[0] === m[0].toUpperCase() ? "W" : "w");
                             i += 2; // consomme le reste du nom ET la vraie ligue, pas seulement l'un des deux

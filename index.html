@@ -534,7 +534,7 @@
                             </div>
                             <div class="grid grid-cols-2 gap-4">
                                 <div class="text-center"><label class="text-[8px] text-slate-500 uppercase">Cote Soft</label><input type="number" id="coteS" placeholder="0.00" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none"><p id="minSoft" class="text-[7px] text-slate-600 uppercase mt-1">min : —</p><p id="besoinSoft" class="text-[7px] uppercase mt-0.5"></p></div>
-                                <div class="text-center"><label class="text-[8px] text-slate-500 uppercase">Cote Pin</label><input type="number" id="coteP" placeholder="0.00" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none text-emerald-500"><p id="minPin" class="text-[7px] text-slate-600 uppercase mt-1">min : 5 €</p><p id="besoinPin" class="text-[7px] uppercase mt-0.5"></p></div>
+                                <div class="text-center"><label class="text-[8px] text-slate-500 uppercase">Cote Pin</label><input type="number" id="coteP" placeholder="0.00" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none text-emerald-500"><p id="minPin" class="text-[7px] text-slate-600 uppercase mt-1">min : 5 €</p><p id="besoinPin" class="text-[7px] uppercase mt-0.5"></p><p id="palierCoteP" class="text-[7px] font-black uppercase mt-0.5"></p></div>
                             </div>
                             <!-- Sélecteur 2 / 3 issues -->
                             <div class="flex items-center gap-2">
@@ -3863,15 +3863,21 @@
             // décision sans vraiment aider (55% vs 58% ne change presque rien concrètement).
             // Purement indicatif, ne bloque ni ne modifie aucun calcul.
             const champCoteP = document.getElementById('coteP');
+            const palierEl = document.getElementById('palierCoteP');
             if (champCoteP) {
                 champCoteP.classList.remove('border-emerald-500', 'ring-emerald-500/40', 'border-amber-500', 'ring-amber-500/40', 'ring-2');
+                if (palierEl) palierEl.innerText = '';
                 if (cp > 1 && cs > 1) {
                     const arbFav = (1/cs) + (1/cp);
                     const pctPin = (1/cp) / arbFav;
                     if (pctPin >= 0.55) {
                         champCoteP.classList.add('border-emerald-500', 'ring-2', 'ring-emerald-500/40');
+                        if (palierEl) { palierEl.innerText = `✓ Favorable (${(pctPin*100).toFixed(0)}%)`; palierEl.className = 'text-[7px] font-black uppercase mt-0.5 text-emerald-400'; }
                     } else if (pctPin >= 0.40) {
                         champCoteP.classList.add('border-amber-500', 'ring-2', 'ring-amber-500/40');
+                        if (palierEl) { palierEl.innerText = `~ Neutre (${(pctPin*100).toFixed(0)}%)`; palierEl.className = 'text-[7px] font-black uppercase mt-0.5 text-amber-400'; }
+                    } else {
+                        if (palierEl) { palierEl.innerText = `Capital élevé requis (${(pctPin*100).toFixed(0)}%)`; palierEl.className = 'text-[7px] font-black uppercase mt-0.5 text-slate-600'; }
                     }
                 }
             }

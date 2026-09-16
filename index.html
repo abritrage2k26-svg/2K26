@@ -3855,16 +3855,25 @@
             const cp = lireCote('coteP');
             const t  = parseFloat(document.getElementById('mise').value);
 
-            // Repère visuel "petit capital favorable" : Pinnacle en dessous de 2, ET en
-            // dessous de la cote soft (peu importe sa valeur à elle — c'est le rapport entre
-            // les deux qui détermine la part de mise, pas la cote Pinnacle isolément). Purement
-            // indicatif, ne bloque ni ne modifie aucun calcul — juste une surbrillance.
+            // Repère visuel "petit capital favorable" à 3 paliers, selon la VRAIE part de
+            // Pinnacle dans la mise totale (1/cp)/(1/cp+1/cs) — pas juste "cp < 2", puisque
+            // c'est cette part qui détermine réellement combien de capital il faut pour
+            // dépasser le minimum de 5€. Volontairement limité à 3 niveaux (pas plus) : sert
+            // à trancher vite en pleine lecture d'une alerte, plus de nuances ralentirait la
+            // décision sans vraiment aider (55% vs 58% ne change presque rien concrètement).
+            // Purement indicatif, ne bloque ni ne modifie aucun calcul.
             const champCoteP = document.getElementById('coteP');
             if (champCoteP) {
-                const favorable = cp > 1 && cs > 1 && cp < 2 && cp < cs;
-                champCoteP.classList.toggle('border-emerald-500', favorable);
-                champCoteP.classList.toggle('ring-2', favorable);
-                champCoteP.classList.toggle('ring-emerald-500/40', favorable);
+                champCoteP.classList.remove('border-emerald-500', 'ring-emerald-500/40', 'border-amber-500', 'ring-amber-500/40', 'ring-2');
+                if (cp > 1 && cs > 1) {
+                    const arbFav = (1/cs) + (1/cp);
+                    const pctPin = (1/cp) / arbFav;
+                    if (pctPin >= 0.55) {
+                        champCoteP.classList.add('border-emerald-500', 'ring-2', 'ring-emerald-500/40');
+                    } else if (pctPin >= 0.40) {
+                        champCoteP.classList.add('border-amber-500', 'ring-2', 'ring-amber-500/40');
+                    }
+                }
             }
 
             if(issuesMode === 2) {

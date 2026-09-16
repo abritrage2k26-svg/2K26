@@ -2125,7 +2125,7 @@
         // calculatrice (bag-calc/index.html) — un côté par bookmaker, dans l'ordre.
         function construireLienCalculateur(op) {
             const base = document.getElementById('calcBaseUrl')?.value.trim();
-            if (!base || op.type === 'SAUVETAGE') return null;
+            if (!base) return null;
             const params = new URLSearchParams();
             if (op.alSport) params.set('sport', op.alSport);
             if (op.alMatch) params.set('match', op.alMatch);
@@ -2135,7 +2135,17 @@
             // Taux EUR/CFA courant — nécessaire pour que la calculatrice affiche le montant
             // Pinnacle en euros (sa vraie devise de dépôt), pas en CFA comme les softs.
             params.set('tx', tx);
-            if (op.issues === 3 && op.sides3) {
+            if (op.type === 'SAUVETAGE') {
+                // Formulaire différent côté calculatrice (voir mode=sauvetage) : l'abonné a
+                // DÉJÀ misé sur le soft avant que la cote Pinnacle bouge, donc il tape SON
+                // propre montant déjà engagé, pas un capital à répartir. On transmet la
+                // cote D'ORIGINE du soft (pour le scénario "si le soft gagne quand même") et
+                // la NOUVELLE cote Pinnacle de sauvetage (pour calculer la mise protectrice).
+                params.set('mode', 'sauvetage');
+                const nomSoft = op.softId === '1xbet' ? '1xBet' : op.softId === '1win' ? '1Win' : (op.softId || '?');
+                params.set('n1', nomSoft); params.set('c1', op.os);
+                params.set('n2', 'Pinnacle'); params.set('c2', op.opn);
+            } else if (op.issues === 3 && op.sides3) {
                 op.sides3.forEach((s, i) => {
                     const nom = s.bk === 'pinnacle' ? 'Pinnacle' : s.bk === '1xbet' ? '1xBet' : s.bk === '1win' ? '1Win' : (s.bk || ('Côté ' + (i + 1)));
                     params.set('n' + (i + 1), nom);
@@ -2205,7 +2215,9 @@
             const lienCalc = construireLienCalculateur(op);
             if (lienCalc) {
                 lignes.push('');
-                lignes.push(`🧮 <a href="${lienCalc}">Calcule ta mise exacte</a> — tape ton capital, la répartition s'affiche en direct.`);
+                lignes.push(estSauvetage
+                    ? `🧮 <a href="${lienCalc}">Calcule ta mise de protection</a> — tape ce que tu avais déjà misé, le montant à placer sur Pinnacle s'affiche en direct.`
+                    : `🧮 <a href="${lienCalc}">Calcule ta mise exacte</a> — tape ton capital, la répartition s'affiche en direct.`);
             }
             // Signal discret quand au moins une donnée de CE signal provient d'une
             // reconstruction automatique (cote/marché) — les abonnés méritent de savoir

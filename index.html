@@ -533,7 +533,7 @@
                                 <input type="number" id="mise" oninput="actualiserPctDepuisMise()" class="w-full bg-transparent text-5xl font-mono font-bold text-center outline-none text-emerald-500" value="0">
                             </div>
                             <div class="grid grid-cols-2 gap-4">
-                                <div class="text-center"><label class="text-[8px] text-slate-500 uppercase">Cote Soft</label><input type="number" id="coteS" placeholder="0.00" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none"><p id="minSoft" class="text-[7px] text-slate-600 uppercase mt-1">min : —</p><p id="besoinSoft" class="text-[7px] uppercase mt-0.5"></p></div>
+                                <div class="text-center"><label class="text-[8px] text-slate-500 uppercase">Cote Soft</label><input type="number" id="coteS" placeholder="0.00" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none"><p id="minSoft" class="text-[7px] text-slate-600 uppercase mt-1">min : —</p><p id="besoinSoft" class="text-[7px] uppercase mt-0.5"></p><p id="palierCoteS" class="text-[7px] font-black uppercase mt-0.5"></p><p id="margeCoteS" class="text-[7px] font-black uppercase mt-0.5"></p></div>
                                 <div class="text-center"><label class="text-[8px] text-slate-500 uppercase">Cote Pin</label><input type="number" id="coteP" placeholder="0.00" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none text-emerald-500"><p id="minPin" class="text-[7px] text-slate-600 uppercase mt-1">min : 5 €</p><p id="besoinPin" class="text-[7px] uppercase mt-0.5"></p><p id="palierCoteP" class="text-[7px] font-black uppercase mt-0.5"></p><p id="margeCoteP" class="text-[7px] font-black uppercase mt-0.5"></p></div>
                             </div>
                             <!-- Sélecteur 2 / 3 issues -->
@@ -3905,20 +3905,28 @@
             // Purement indicatif, ne bloque ni ne modifie aucun calcul.
             const champCoteP = document.getElementById('coteP');
             const palierEl = document.getElementById('palierCoteP');
+            // Même badge dupliqué sous Cote Soft (miroir exact de palierCoteP) — l'utilisateur
+            // veut voir cette indication quel que soit le champ qu'il regarde, sans avoir à
+            // reporter son regard vers la colonne Pin.
+            const palierElSoft = document.getElementById('palierCoteS');
             if (champCoteP) {
                 champCoteP.classList.remove('border-emerald-500', 'ring-emerald-500/40', 'border-amber-500', 'ring-amber-500/40', 'ring-2');
                 if (palierEl) palierEl.innerText = '';
+                if (palierElSoft) palierElSoft.innerText = '';
                 if (cp > 1 && cs > 1) {
                     const arbFav = (1/cs) + (1/cp);
                     const pctPin = (1/cp) / arbFav;
                     if (pctPin >= 0.55) {
                         champCoteP.classList.add('border-emerald-500', 'ring-2', 'ring-emerald-500/40');
                         if (palierEl) { palierEl.innerText = `✓ Favorable (${(pctPin*100).toFixed(0)}%)`; palierEl.className = 'text-[7px] font-black uppercase mt-0.5 text-emerald-400'; }
+                        if (palierElSoft) { palierElSoft.innerText = `✓ Favorable (${(pctPin*100).toFixed(0)}%)`; palierElSoft.className = 'text-[7px] font-black uppercase mt-0.5 text-emerald-400'; }
                     } else if (pctPin >= 0.40) {
                         champCoteP.classList.add('border-amber-500', 'ring-2', 'ring-amber-500/40');
                         if (palierEl) { palierEl.innerText = `~ Neutre (${(pctPin*100).toFixed(0)}%)`; palierEl.className = 'text-[7px] font-black uppercase mt-0.5 text-amber-400'; }
+                        if (palierElSoft) { palierElSoft.innerText = `~ Neutre (${(pctPin*100).toFixed(0)}%)`; palierElSoft.className = 'text-[7px] font-black uppercase mt-0.5 text-amber-400'; }
                     } else {
                         if (palierEl) { palierEl.innerText = `Capital élevé requis (${(pctPin*100).toFixed(0)}%)`; palierEl.className = 'text-[7px] font-black uppercase mt-0.5 text-slate-600'; }
+                        if (palierElSoft) { palierElSoft.innerText = `Capital élevé requis (${(pctPin*100).toFixed(0)}%)`; palierElSoft.className = 'text-[7px] font-black uppercase mt-0.5 text-slate-600'; }
                     }
                 }
             }
@@ -3929,18 +3937,25 @@
             // que le préremplissage de mise, pour ne jamais afficher un chiffre différent de
             // celui réellement appliqué si l'opérateur lance l'alerte.
             const margeEl = document.getElementById('margeCoteP');
+            // Même indication dupliquée sous Cote Soft (miroir exact de margeCoteP) — cette
+            // info porte sur le capital global de l'opération, pas sur une jambe en
+            // particulier, donc elle a autant sa place sous Soft que sous Pin.
+            const margeElSoft = document.getElementById('margeCoteS');
             if (margeEl) {
                 margeEl.innerText = '';
+                if (margeElSoft) margeElSoft.innerText = '';
                 const resultatMarge = calculerCapitalMinimumRequis();
                 if (resultatMarge) {
                     const ratio = resultatMarge.base / resultatMarge.tMinRequis;
                     if (ratio >= 1) {
                         margeEl.innerText = `Tu as ${ratio.toFixed(1)}x ce qu'il faut`;
                         margeEl.className = 'text-[7px] font-black uppercase mt-0.5 text-emerald-400';
+                        if (margeElSoft) { margeElSoft.innerText = `Tu as ${ratio.toFixed(1)}x ce qu'il faut`; margeElSoft.className = 'text-[7px] font-black uppercase mt-0.5 text-emerald-400'; }
                     } else {
                         const manque = Math.ceil(resultatMarge.tMinRequis - resultatMarge.base);
                         margeEl.innerText = `⚠️ Il manque ${manque.toLocaleString('fr-FR')} CFA`;
                         margeEl.className = 'text-[7px] font-black uppercase mt-0.5 text-red-400';
+                        if (margeElSoft) { margeElSoft.innerText = `⚠️ Il manque ${manque.toLocaleString('fr-FR')} CFA`; margeElSoft.className = 'text-[7px] font-black uppercase mt-0.5 text-red-400'; }
                     }
                 }
             }

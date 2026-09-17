@@ -1184,6 +1184,14 @@
                     // rare comme vrai début de nom d'équipe (un des seuls cas connus, "W
                     // Connection FC", n'apparaît sur aucune des ligues suivies par cette
                     // stratégie) — le risque est jugé négligeable face à la fréquence du résidu.
+                    // Variante mixte du même résidu : un caractère ASCII (K/M/W/B...) suivi
+                    // d'un accent isolé lu par l'OCR (ex. "Kï" au lieu de "Ki") — l'OCR lit
+                    // souvent la fin de l'icône comme une lettre accentuée plutôt que comme un
+                    // second caractère latin propre. Le filtre latin pur ci-dessus (mi/ki/wi/bi)
+                    // ne matche pas "Kï" car "ï" ≠ "i", et le filtre non-ASCII plus bas ne
+                    // matche pas non plus car le tout premier caractère ("K") est bien ASCII.
+                    // Bug réel constaté : bloc PS3838 gardait "Kï Fiji" au lieu de "Fiji".
+                    reste = reste.replace(/^(?:mi|ki|wi|bi|k|m|w|b)[^\x00-\x7F]\s+(?=[A-ZÀ-Ý])/i, '').trim();
                     reste = reste.replace(/^(?:mi|ki|wi|bi|k|m|w|b)\s+(?=[A-ZÀ-Ý])/i, '').trim();
                     // Autre variante de lecture du même bouton "copier" — cette fois rendu en
                     // caractères non-ASCII plutôt qu'en lettres latines parasites (pas la flèche

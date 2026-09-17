@@ -2992,12 +2992,26 @@
             mM_sauv  = sauvSoftId === '1win' ? mS_total : 0;
             if(mS_total <= 0) { afficherToast("Mise soft invalide.", 'danger'); return; }
             // Cote soft d'origine (pré-remplie automatiquement si l'opération initiale est encore en mémoire).
-            // Sans cette valeur, choisir plus tard "GAGNANT SOFT" calculerait un retour faux (l'ancien code
-            // forçait une cote de 1, ce qui affichait une perte fictive si le soft gagnait réellement).
+            // Indispensable au calcul lui-même désormais (voir formule ci-dessous, pas juste à
+            // l'affichage comme avant) — sans elle, impossible de calculer une mise de
+            // protection qui égalise les deux issues, donc on bloque plutôt que d'afficher un
+            // résultat silencieusement faux (mise à 0, ou pire).
             const cSauvOrigine = lireCote('sauvCoteS') || 0;
+            if (cSauvOrigine <= 1) {
+                afficherToast("⚠️ Cote d'origine introuvable — relance d'abord l'opération initiale pour que ce sauvetage puisse la retrouver automatiquement.", 'danger');
+                return;
+            }
 
-            const miseP_Eur  = (mS_total / tx) / (cP - 1);
-            const miseP_Cfa  = miseP_Eur * tx;
+            // Égalise EXACTEMENT les deux issues (Pinnacle gagne / soft gagne à sa cote
+            // d'origine) plutôt que de protéger uniquement le scénario "Pinnacle gagne" en
+            // laissant l'autre au hasard (ancienne formule). Dérivée en posant
+            // profit_Pinnacle = profit_Soft et en résolvant pour miseP — se simplifie en
+            // miseP = mise_déjà_placée × cote_origine / nouvelle_cote. Résultat : soit un vrai
+            // profit garanti des deux côtés (si l'arbitrage tient encore malgré la chute de
+            // cote), soit la perte la plus faible possible répartie également — jamais un
+            // résultat où gagner peut donner 0 CFA et l'autre issue une grosse perte.
+            const miseP_Cfa = mS_total * cSauvOrigine / cP;
+            const miseP_Eur = miseP_Cfa / tx;
             const totalEngage = mS_total + miseP_Cfa;
             const retourFinal = (miseP_Eur * cP) * tx;
             // +1e-6 : absorbe le bruit d'arithmétique flottante (ex: -1.8e-12 au lieu de 0

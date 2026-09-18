@@ -533,8 +533,8 @@
                                 <input type="number" id="mise" oninput="actualiserPctDepuisMise()" class="w-full bg-transparent text-5xl font-mono font-bold text-center outline-none text-emerald-500" value="0">
                             </div>
                             <div class="grid grid-cols-2 gap-4">
-                                <div class="text-center"><label class="text-[8px] text-slate-500 uppercase">Cote Soft</label><input type="number" id="coteS" placeholder="0.00" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none"><p id="minSoft" class="text-[7px] text-slate-600 uppercase mt-1">min : —</p><p id="besoinSoft" class="text-[7px] uppercase mt-0.5"></p><p id="palierCoteS" class="text-[7px] font-black uppercase mt-0.5"></p><p id="margeCoteS" class="text-[7px] font-black uppercase mt-0.5"></p></div>
-                                <div class="text-center"><label class="text-[8px] text-slate-500 uppercase">Cote Pin</label><input type="number" id="coteP" placeholder="0.00" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none text-emerald-500"><p id="minPin" class="text-[7px] text-slate-600 uppercase mt-1">min : 5 €</p><p id="besoinPin" class="text-[7px] uppercase mt-0.5"></p><p id="palierCoteP" class="text-[7px] font-black uppercase mt-0.5"></p><p id="margeCoteP" class="text-[7px] font-black uppercase mt-0.5"></p></div>
+                                <div class="text-center"><label class="text-[8px] text-slate-500 uppercase">Cote Soft</label><input type="number" id="coteS" placeholder="0.00" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none"><p id="minSoft" class="text-[7px] text-slate-600 uppercase mt-1">min : —</p><p id="besoinSoft" class="text-[7px] uppercase mt-0.5"></p><p id="palierCoteS" class="text-[7px] font-black uppercase mt-0.5"></p><p id="margeCoteS" class="text-[7px] font-black uppercase mt-0.5"></p><p id="margeMiseCoteS" class="text-[7px] font-black uppercase mt-0.5"></p></div>
+                                <div class="text-center"><label class="text-[8px] text-slate-500 uppercase">Cote Pin</label><input type="number" id="coteP" placeholder="0.00" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none text-emerald-500"><p id="minPin" class="text-[7px] text-slate-600 uppercase mt-1">min : 5 €</p><p id="besoinPin" class="text-[7px] uppercase mt-0.5"></p><p id="palierCoteP" class="text-[7px] font-black uppercase mt-0.5"></p><p id="margeCoteP" class="text-[7px] font-black uppercase mt-0.5"></p><p id="margeMiseCoteP" class="text-[7px] font-black uppercase mt-0.5"></p></div>
                             </div>
                             <!-- Sélecteur 2 / 3 issues -->
                             <div class="flex items-center gap-2">
@@ -3905,9 +3905,12 @@
             // Purement indicatif, ne bloque ni ne modifie aucun calcul.
             const champCoteP = document.getElementById('coteP');
             const palierEl = document.getElementById('palierCoteP');
-            // Même badge dupliqué sous Cote Soft (miroir exact de palierCoteP) — l'utilisateur
-            // veut voir cette indication quel que soit le champ qu'il regarde, sans avoir à
-            // reporter son regard vers la colonne Pin.
+            // Badge sous Cote Soft — affiche la PROPRE part de Soft (pctSoft = 1 - pctPin),
+            // pas une copie du badge Pin. Les deux camps ne se valent jamais : si Pin
+            // représente 51% de la mise, Soft en représente 49%, et chaque colonne doit
+            // refléter SA part réelle plutôt que republier le même chiffre sous les deux
+            // (l'ancien comportement affichait pctPin deux fois, ce qui ne voulait rien dire
+            // sous Soft — corrigé sur demande explicite de l'utilisateur).
             const palierElSoft = document.getElementById('palierCoteS');
             if (champCoteP) {
                 champCoteP.classList.remove('border-emerald-500', 'ring-emerald-500/40', 'border-amber-500', 'ring-amber-500/40', 'ring-2');
@@ -3916,26 +3919,39 @@
                 if (cp > 1 && cs > 1) {
                     const arbFav = (1/cs) + (1/cp);
                     const pctPin = (1/cp) / arbFav;
+                    const pctSoft = 1 - pctPin;
                     if (pctPin >= 0.55) {
                         champCoteP.classList.add('border-emerald-500', 'ring-2', 'ring-emerald-500/40');
                         if (palierEl) { palierEl.innerText = `✓ Favorable (${(pctPin*100).toFixed(0)}%)`; palierEl.className = 'text-[7px] font-black uppercase mt-0.5 text-emerald-400'; }
-                        if (palierElSoft) { palierElSoft.innerText = `✓ Favorable (${(pctPin*100).toFixed(0)}%)`; palierElSoft.className = 'text-[7px] font-black uppercase mt-0.5 text-emerald-400'; }
                     } else if (pctPin >= 0.40) {
                         champCoteP.classList.add('border-amber-500', 'ring-2', 'ring-amber-500/40');
                         if (palierEl) { palierEl.innerText = `~ Neutre (${(pctPin*100).toFixed(0)}%)`; palierEl.className = 'text-[7px] font-black uppercase mt-0.5 text-amber-400'; }
-                        if (palierElSoft) { palierElSoft.innerText = `~ Neutre (${(pctPin*100).toFixed(0)}%)`; palierElSoft.className = 'text-[7px] font-black uppercase mt-0.5 text-amber-400'; }
                     } else {
                         if (palierEl) { palierEl.innerText = `Capital élevé requis (${(pctPin*100).toFixed(0)}%)`; palierEl.className = 'text-[7px] font-black uppercase mt-0.5 text-slate-600'; }
-                        if (palierElSoft) { palierElSoft.innerText = `Capital élevé requis (${(pctPin*100).toFixed(0)}%)`; palierElSoft.className = 'text-[7px] font-black uppercase mt-0.5 text-slate-600'; }
+                    }
+                    // Même grille de seuils (55% / 40%) appliquée à pctSoft plutôt qu'à
+                    // pctPin — les deux badges sont donc évalués indépendamment et peuvent
+                    // afficher des verdicts différents (ex. Pin "Neutre (48%)" ET Soft
+                    // "Neutre (52%)" en même temps, ou l'un Favorable pendant que l'autre ne
+                    // l'est pas, selon l'écart réel entre les deux cotes).
+                    if (pctSoft >= 0.55) {
+                        if (palierElSoft) { palierElSoft.innerText = `✓ Favorable (${(pctSoft*100).toFixed(0)}%)`; palierElSoft.className = 'text-[7px] font-black uppercase mt-0.5 text-emerald-400'; }
+                    } else if (pctSoft >= 0.40) {
+                        if (palierElSoft) { palierElSoft.innerText = `~ Neutre (${(pctSoft*100).toFixed(0)}%)`; palierElSoft.className = 'text-[7px] font-black uppercase mt-0.5 text-amber-400'; }
+                    } else {
+                        if (palierElSoft) { palierElSoft.innerText = `Capital élevé requis (${(pctSoft*100).toFixed(0)}%)`; palierElSoft.className = 'text-[7px] font-black uppercase mt-0.5 text-slate-600'; }
                     }
                 }
             }
 
-            // Marge par rapport au capital de référence ACTUEL — répond directement à "est-ce
-            // que je peux jouer ça, là, maintenant ?", plutôt qu'un pourcentage abstrait à
-            // traduire mentalement. Réutilise calculerCapitalMinimumRequis(), la MÊME fonction
-            // que le préremplissage de mise, pour ne jamais afficher un chiffre différent de
-            // celui réellement appliqué si l'opérateur lance l'alerte.
+            // Marge par rapport au capital de référence ACTUEL (bankroll global — départCap ou
+            // somme des wallets en mode compound) — répond à "est-ce que MON CAPITAL TOTAL
+            // suffit pour cette opération ?". Réutilise calculerCapitalMinimumRequis(), la MÊME
+            // fonction que le préremplissage de mise, pour ne jamais afficher un chiffre
+            // différent de celui réellement appliqué si l'opérateur lance l'alerte.
+            // Préfixé "Bankroll" pour le distinguer de l'indicateur "Mise" juste en dessous, qui
+            // répond à une question différente (voir plus bas) — demande explicite de
+            // l'utilisateur d'avoir les deux à la fois, pas l'un à la place de l'autre.
             const margeEl = document.getElementById('margeCoteP');
             // Même indication dupliquée sous Cote Soft (miroir exact de margeCoteP) — cette
             // info porte sur le capital global de l'opération, pas sur une jambe en
@@ -3948,14 +3964,39 @@
                 if (resultatMarge) {
                     const ratio = resultatMarge.base / resultatMarge.tMinRequis;
                     if (ratio >= 1) {
-                        margeEl.innerText = `Tu as ${ratio.toFixed(1)}x ce qu'il faut`;
+                        margeEl.innerText = `Bankroll : ${ratio.toFixed(1)}x ce qu'il faut`;
                         margeEl.className = 'text-[7px] font-black uppercase mt-0.5 text-emerald-400';
-                        if (margeElSoft) { margeElSoft.innerText = `Tu as ${ratio.toFixed(1)}x ce qu'il faut`; margeElSoft.className = 'text-[7px] font-black uppercase mt-0.5 text-emerald-400'; }
+                        if (margeElSoft) { margeElSoft.innerText = `Bankroll : ${ratio.toFixed(1)}x ce qu'il faut`; margeElSoft.className = 'text-[7px] font-black uppercase mt-0.5 text-emerald-400'; }
                     } else {
                         const manque = Math.ceil(resultatMarge.tMinRequis - resultatMarge.base);
-                        margeEl.innerText = `⚠️ Il manque ${manque.toLocaleString('fr-FR')} CFA`;
+                        margeEl.innerText = `⚠️ Bankroll : il manque ${manque.toLocaleString('fr-FR')} CFA`;
                         margeEl.className = 'text-[7px] font-black uppercase mt-0.5 text-red-400';
-                        if (margeElSoft) { margeElSoft.innerText = `⚠️ Il manque ${manque.toLocaleString('fr-FR')} CFA`; margeElSoft.className = 'text-[7px] font-black uppercase mt-0.5 text-red-400'; }
+                        if (margeElSoft) { margeElSoft.innerText = `⚠️ Bankroll : il manque ${manque.toLocaleString('fr-FR')} CFA`; margeElSoft.className = 'text-[7px] font-black uppercase mt-0.5 text-red-400'; }
+                    }
+                }
+
+                // Deuxième indicateur — compare cette fois la MISE actuellement tapée dans le
+                // champ (variable `t`, lue plus haut dans cette même fonction) au minimum requis
+                // pour cette opération. Répond à une question différente de celle ci-dessus :
+                // pas "mon bankroll global suffit-il ?", mais "ce que j'ai concrètement saisi
+                // comme mise pour CETTE opération est-il assez, une fois réparti sur les deux
+                // jambes ?" — utile par exemple si l'opérateur a délibérément réduit sa mise en
+                // dessous de son plein bankroll. Même fonction `calculerCapitalMinimumRequis()`
+                // (donc même `tMinRequis`, avec la même marge de sécurité de 5%) pour rester
+                // cohérent avec l'indicateur bankroll et avec le préremplissage automatique.
+                const margeMiseEl = document.getElementById('margeMiseCoteP');
+                const margeMiseElSoft = document.getElementById('margeMiseCoteS');
+                if (margeMiseEl) margeMiseEl.innerText = '';
+                if (margeMiseElSoft) margeMiseElSoft.innerText = '';
+                if (resultatMarge && t > 0) {
+                    const ratioMise = t / resultatMarge.tMinRequis;
+                    if (ratioMise >= 1) {
+                        if (margeMiseEl) { margeMiseEl.innerText = `Mise : ${ratioMise.toFixed(1)}x ce qu'il faut`; margeMiseEl.className = 'text-[7px] font-black uppercase mt-0.5 text-emerald-400'; }
+                        if (margeMiseElSoft) { margeMiseElSoft.innerText = `Mise : ${ratioMise.toFixed(1)}x ce qu'il faut`; margeMiseElSoft.className = 'text-[7px] font-black uppercase mt-0.5 text-emerald-400'; }
+                    } else {
+                        const manqueMise = Math.ceil(resultatMarge.tMinRequis - t);
+                        if (margeMiseEl) { margeMiseEl.innerText = `⚠️ Mise : il manque ${manqueMise.toLocaleString('fr-FR')} CFA`; margeMiseEl.className = 'text-[7px] font-black uppercase mt-0.5 text-red-400'; }
+                        if (margeMiseElSoft) { margeMiseElSoft.innerText = `⚠️ Mise : il manque ${manqueMise.toLocaleString('fr-FR')} CFA`; margeMiseElSoft.className = 'text-[7px] font-black uppercase mt-0.5 text-red-400'; }
                     }
                 }
             }

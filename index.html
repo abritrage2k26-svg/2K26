@@ -531,10 +531,22 @@
                                     <button id="btnCompound" onclick="toggleCompound()" class="bg-slate-800 text-slate-500 border border-slate-700 px-2 py-0.5 rounded text-[7px] font-black uppercase">Mode Stable (OFF)</button>
                                 </div>
                                 <input type="number" id="mise" oninput="actualiserPctDepuisMise()" class="w-full bg-transparent text-5xl font-mono font-bold text-center outline-none text-emerald-500" value="0">
+                                <!-- Bankroll/Mise : propriétés de l'OPÉRATION ENTIÈRE (les deux jambes
+                                ensemble), pas d'une jambe en particulier — contrairement au badge de
+                                part (Favorable/Neutre) qui, lui, diffère bien entre Soft et Pin, il
+                                n'existe pas de "part Soft" et "part Pin" séparée du capital minimum :
+                                un seul calcul joint (calculerCapitalMinimumRequis, appelé UNE SEULE
+                                fois) donne UN SEUL résultat. Affiché ici une seule fois, sous le champ
+                                Mise, plutôt que dupliqué sous chaque cote comme avant — demande
+                                explicite de l'utilisateur, la duplication ne correspondait à aucune
+                                vraie distinction et prêtait à confusion.
+                                -->
+                                <p id="margeGlobale" class="text-[8px] font-black uppercase text-center mt-1"></p>
+                                <p id="margeMiseGlobale" class="text-[8px] font-black uppercase text-center mt-0.5"></p>
                             </div>
                             <div class="grid grid-cols-2 gap-4">
-                                <div class="text-center"><label class="text-[8px] text-slate-500 uppercase">Cote Soft</label><input type="number" id="coteS" placeholder="0.00" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none"><p id="minSoft" class="text-[7px] text-slate-600 uppercase mt-1">min : —</p><p id="besoinSoft" class="text-[7px] uppercase mt-0.5"></p><p id="palierCoteS" class="text-[7px] font-black uppercase mt-0.5"></p><p id="margeCoteS" class="text-[7px] font-black uppercase mt-0.5"></p><p id="margeMiseCoteS" class="text-[7px] font-black uppercase mt-0.5"></p></div>
-                                <div class="text-center"><label class="text-[8px] text-slate-500 uppercase">Cote Pin</label><input type="number" id="coteP" placeholder="0.00" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none text-emerald-500"><p id="minPin" class="text-[7px] text-slate-600 uppercase mt-1">min : 5 €</p><p id="besoinPin" class="text-[7px] uppercase mt-0.5"></p><p id="palierCoteP" class="text-[7px] font-black uppercase mt-0.5"></p><p id="margeCoteP" class="text-[7px] font-black uppercase mt-0.5"></p><p id="margeMiseCoteP" class="text-[7px] font-black uppercase mt-0.5"></p></div>
+                                <div class="text-center"><label class="text-[8px] text-slate-500 uppercase">Cote Soft</label><input type="number" id="coteS" placeholder="0.00" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none"><p id="minSoft" class="text-[7px] text-slate-600 uppercase mt-1">min : —</p><p id="besoinSoft" class="text-[7px] uppercase mt-0.5"></p><p id="palierCoteS" class="text-[7px] font-black uppercase mt-0.5"></p></div>
+                                <div class="text-center"><label class="text-[8px] text-slate-500 uppercase">Cote Pin</label><input type="number" id="coteP" placeholder="0.00" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none text-emerald-500"><p id="minPin" class="text-[7px] text-slate-600 uppercase mt-1">min : 5 €</p><p id="besoinPin" class="text-[7px] uppercase mt-0.5"></p><p id="palierCoteP" class="text-[7px] font-black uppercase mt-0.5"></p></div>
                             </div>
                             <!-- Sélecteur 2 / 3 issues -->
                             <div class="flex items-center gap-2">
@@ -1266,7 +1278,14 @@
                         // Yulaev Ufa"). Laisser marché vide dans ce cas est préférable : ça reste
                         // honnête et déclenche l'avertissement "marché non détecté" plutôt qu'une
                         // valeur fausse affichée avec la même assurance qu'une vraie.
-                        const mMarche = reste.match(/(?:^|\s)([A-Z0-9]{1,4}(?:\s?\([^)]{0,15}\))*)\s*$/);
+                        // Lookbehind (pas juste "?:^|\s") pour tolérer un marché collé SANS espace
+                        // juste après une parenthèse de qualificatif ("(Corners)AH1(-0.5)", sans
+                        // espace entre les deux, comme le rend souvent l'OCR sur les marchés
+                        // spéciaux) — sans consommer ce ")" dans le match, contrairement à un
+                        // groupe capturant classique qui l'aurait effacé du nom affiché. Bug réel
+                        // constaté : le marché d'un bloc "Corners" restait vide (affiché "?") alors
+                        // que la cote et le reste étaient corrects.
+                        const mMarche = reste.match(/(?<=^|\s|\))([A-Z0-9]{1,4}(?:\s?\([^)]{0,15}\))*)\s*$/);
                         if (mMarche && mMarche[1]) {
                             marche = corrigerPointMarche(mMarche[1]);
                             reste = reste.slice(0, mMarche.index).trim();
@@ -1283,7 +1302,7 @@
                             // faux affiché avec la même assurance qu'un vrai.
                             const resteSansResidu = reste.replace(/\s+[a-zA-Z0-9]{1,2}\s*$/, '').trim();
                             if (resteSansResidu !== reste) {
-                                const mMarche2 = resteSansResidu.match(/(?:^|\s)([A-Z0-9]{1,4}(?:\s?\([^)]{0,15}\))*)\s*$/);
+                                const mMarche2 = resteSansResidu.match(/(?<=^|\s|\))([A-Z0-9]{1,4}(?:\s?\([^)]{0,15}\))*)\s*$/);
                                 if (mMarche2 && mMarche2[1]) {
                                     marche = corrigerPointMarche(mMarche2[1]);
                                     reste = resteSansResidu.slice(0, mMarche2.index).trim();
@@ -1326,7 +1345,7 @@
                         // Même résidu isolé (chiffre ou lettre) que dans la branche principale
                         // (voir plus haut) — un caractère parasite entre marché et cote.
                         reste = reste.replace(/(\(-?\d+(?:\.\d+)?\))\s+[a-zA-Z0-9]{1,2}\s*$/, '$1').trim();
-                            const mMarche = reste.match(/(?:^|\s)([A-Z0-9]{1,4}(?:\s?\([^)]{0,15}\))*)\s*$/);
+                            const mMarche = reste.match(/(?<=^|\s|\))([A-Z0-9]{1,4}(?:\s?\([^)]{0,15}\))*)\s*$/);
                             if (mMarche && mMarche[1]) {
                                 marche = corrigerPointMarche(mMarche[1]);
                                 reste = reste.slice(0, mMarche.index).trim();
@@ -1336,7 +1355,7 @@
                                 // (qui exige une parenthèse fermante juste avant).
                                 const resteSansResidu = reste.replace(/\s+[a-zA-Z0-9]{1,2}\s*$/, '').trim();
                                 if (resteSansResidu !== reste) {
-                                    const mMarche2 = resteSansResidu.match(/(?:^|\s)([A-Z0-9]{1,4}(?:\s?\([^)]{0,15}\))*)\s*$/);
+                                    const mMarche2 = resteSansResidu.match(/(?<=^|\s|\))([A-Z0-9]{1,4}(?:\s?\([^)]{0,15}\))*)\s*$/);
                                     if (mMarche2 && mMarche2[1]) {
                                         marche = corrigerPointMarche(mMarche2[1]);
                                         reste = resteSansResidu.slice(0, mMarche2.index).trim();
@@ -3949,29 +3968,26 @@
             // suffit pour cette opération ?". Réutilise calculerCapitalMinimumRequis(), la MÊME
             // fonction que le préremplissage de mise, pour ne jamais afficher un chiffre
             // différent de celui réellement appliqué si l'opérateur lance l'alerte.
-            // Préfixé "Bankroll" pour le distinguer de l'indicateur "Mise" juste en dessous, qui
-            // répond à une question différente (voir plus bas) — demande explicite de
-            // l'utilisateur d'avoir les deux à la fois, pas l'un à la place de l'autre.
-            const margeEl = document.getElementById('margeCoteP');
-            // Même indication dupliquée sous Cote Soft (miroir exact de margeCoteP) — cette
-            // info porte sur le capital global de l'opération, pas sur une jambe en
-            // particulier, donc elle a autant sa place sous Soft que sous Pin.
-            const margeElSoft = document.getElementById('margeCoteS');
+            // Affiché UNE SEULE FOIS, sous le champ Mise central (#margeGlobale /
+            // #margeMiseGlobale) — pas dupliqué sous chaque cote comme avant, puisque cette
+            // info porte sur le capital de l'opération ENTIÈRE (les deux jambes ensemble), pas
+            // sur une jambe en particulier : il n'existe qu'UN seul résultat à afficher, pas un
+            // par colonne. Contrairement au badge de part juste au-dessus (Favorable/Neutre),
+            // qui lui diffère légitimement entre Soft et Pin et reste donc bien sous chaque
+            // cote séparément.
+            const margeEl = document.getElementById('margeGlobale');
             if (margeEl) {
                 margeEl.innerText = '';
-                if (margeElSoft) margeElSoft.innerText = '';
                 const resultatMarge = calculerCapitalMinimumRequis();
                 if (resultatMarge) {
                     const ratio = resultatMarge.base / resultatMarge.tMinRequis;
                     if (ratio >= 1) {
                         margeEl.innerText = `Bankroll : ${ratio.toFixed(1)}x ce qu'il faut`;
-                        margeEl.className = 'text-[7px] font-black uppercase mt-0.5 text-emerald-400';
-                        if (margeElSoft) { margeElSoft.innerText = `Bankroll : ${ratio.toFixed(1)}x ce qu'il faut`; margeElSoft.className = 'text-[7px] font-black uppercase mt-0.5 text-emerald-400'; }
+                        margeEl.className = 'text-[8px] font-black uppercase text-center mt-1 text-emerald-400';
                     } else {
                         const manque = Math.ceil(resultatMarge.tMinRequis - resultatMarge.base);
                         margeEl.innerText = `⚠️ Bankroll : il manque ${manque.toLocaleString('fr-FR')} CFA`;
-                        margeEl.className = 'text-[7px] font-black uppercase mt-0.5 text-red-400';
-                        if (margeElSoft) { margeElSoft.innerText = `⚠️ Bankroll : il manque ${manque.toLocaleString('fr-FR')} CFA`; margeElSoft.className = 'text-[7px] font-black uppercase mt-0.5 text-red-400'; }
+                        margeEl.className = 'text-[8px] font-black uppercase text-center mt-1 text-red-400';
                     }
                 }
 
@@ -3984,19 +4000,15 @@
                 // dessous de son plein bankroll. Même fonction `calculerCapitalMinimumRequis()`
                 // (donc même `tMinRequis`, avec la même marge de sécurité de 5%) pour rester
                 // cohérent avec l'indicateur bankroll et avec le préremplissage automatique.
-                const margeMiseEl = document.getElementById('margeMiseCoteP');
-                const margeMiseElSoft = document.getElementById('margeMiseCoteS');
+                const margeMiseEl = document.getElementById('margeMiseGlobale');
                 if (margeMiseEl) margeMiseEl.innerText = '';
-                if (margeMiseElSoft) margeMiseElSoft.innerText = '';
                 if (resultatMarge && t > 0) {
                     const ratioMise = t / resultatMarge.tMinRequis;
                     if (ratioMise >= 1) {
-                        if (margeMiseEl) { margeMiseEl.innerText = `Mise : ${ratioMise.toFixed(1)}x ce qu'il faut`; margeMiseEl.className = 'text-[7px] font-black uppercase mt-0.5 text-emerald-400'; }
-                        if (margeMiseElSoft) { margeMiseElSoft.innerText = `Mise : ${ratioMise.toFixed(1)}x ce qu'il faut`; margeMiseElSoft.className = 'text-[7px] font-black uppercase mt-0.5 text-emerald-400'; }
+                        if (margeMiseEl) { margeMiseEl.innerText = `Mise : ${ratioMise.toFixed(1)}x ce qu'il faut`; margeMiseEl.className = 'text-[8px] font-black uppercase text-center mt-0.5 text-emerald-400'; }
                     } else {
                         const manqueMise = Math.ceil(resultatMarge.tMinRequis - t);
-                        if (margeMiseEl) { margeMiseEl.innerText = `⚠️ Mise : il manque ${manqueMise.toLocaleString('fr-FR')} CFA`; margeMiseEl.className = 'text-[7px] font-black uppercase mt-0.5 text-red-400'; }
-                        if (margeMiseElSoft) { margeMiseElSoft.innerText = `⚠️ Mise : il manque ${manqueMise.toLocaleString('fr-FR')} CFA`; margeMiseElSoft.className = 'text-[7px] font-black uppercase mt-0.5 text-red-400'; }
+                        if (margeMiseEl) { margeMiseEl.innerText = `⚠️ Mise : il manque ${manqueMise.toLocaleString('fr-FR')} CFA`; margeMiseEl.className = 'text-[8px] font-black uppercase text-center mt-0.5 text-red-400'; }
                     }
                 }
             }

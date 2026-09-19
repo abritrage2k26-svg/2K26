@@ -1000,7 +1000,7 @@
             return d;
         }
 
-        function corrigerPointMarche(marcheStr) {
+        function corrigerPointMarche(marcheStr, sport) {
             if (!marcheStr) return marcheStr;
             // Ne jamais reconstituer un point décimal sur un marché "3-way" (Plus/Moins/
             // Exactement) : contrairement aux marchés 2 issues qui utilisent presque toujours
@@ -1010,6 +1010,16 @@
             // de 10 (corners, buts...), pas un "1.0" tronqué. Bug réel constaté : "TO
             // (3-way)(10)" devenait "TO (3-way)(1.0)", une valeur fausse.
             if (/3-way/i.test(marcheStr)) return marcheStr;
+            // Même logique pour les sports à totaux NATURELLEMENT élevés (Handball, Basketball,
+            // Volleyball...) : un nombre à 2 chiffres y est presque toujours une vraie ligne
+            // entière ou demi-entière DANS LES DIZAINES (ex. Handball : totaux courants de 50 à
+            // 70+), jamais un "6.1" tronqué comme en football où les totaux dépassent rarement
+            // 15. Bug réel constaté : une alerte Handball "TO(61)" devenait "TO(6.1)" — une
+            // valeur hors de propos pour ce sport — alors que l'AUTRE bookmaker affichait sur
+            // la même rencontre "TU(62.5)", confirmant que les vrais totaux tournent bien
+            // autour de 60, pas de 6.
+            const SPORTS_TOTAUX_ELEVES = ['Basketball', 'Basket', 'Handball', 'Volleyball', 'Water-polo', 'Waterpolo'];
+            if (sport && SPORTS_TOTAUX_ELEVES.some(s => normaliserNomSport(sport) === normaliserNomSport(s))) return marcheStr;
             return marcheStr.replace(/\((\d{2})\)/, (m, chiffres) => `(${chiffres[0]}.${chiffres[1]})`);
         }
 
@@ -1315,7 +1325,7 @@
                         // que la cote et le reste étaient corrects.
                         const mMarche = reste.match(/(?<=^|\s|\))([A-Z0-9]{1,4}(?:\s?\([^)]{0,15}\))*)\s*$/);
                         if (mMarche && mMarche[1]) {
-                            marche = corrigerPointMarche(mMarche[1]);
+                            marche = corrigerPointMarche(mMarche[1], meta.sport);
                             reste = reste.slice(0, mMarche.index).trim();
                         } else {
                             // Filet de repli — l'extraction directe a totalement échoué : souvent
@@ -1332,7 +1342,7 @@
                             if (resteSansResidu !== reste) {
                                 const mMarche2 = resteSansResidu.match(/(?<=^|\s|\))([A-Z0-9]{1,4}(?:\s?\([^)]{0,15}\))*)\s*$/);
                                 if (mMarche2 && mMarche2[1]) {
-                                    marche = corrigerPointMarche(mMarche2[1]);
+                                    marche = corrigerPointMarche(mMarche2[1], meta.sport);
                                     reste = resteSansResidu.slice(0, mMarche2.index).trim();
                                 }
                             }
@@ -1377,7 +1387,7 @@
                         reste = reste.replace(/\bx{1,2}([12])\b/gi, 'X$1');
                             const mMarche = reste.match(/(?<=^|\s|\))([A-Z0-9]{1,4}(?:\s?\([^)]{0,15}\))*)\s*$/);
                             if (mMarche && mMarche[1]) {
-                                marche = corrigerPointMarche(mMarche[1]);
+                                marche = corrigerPointMarche(mMarche[1], meta.sport);
                                 reste = reste.slice(0, mMarche.index).trim();
                             } else {
                                 // Même filet de repli que dans la branche principale (voir plus haut) :
@@ -1387,7 +1397,7 @@
                                 if (resteSansResidu !== reste) {
                                     const mMarche2 = resteSansResidu.match(/(?<=^|\s|\))([A-Z0-9]{1,4}(?:\s?\([^)]{0,15}\))*)\s*$/);
                                     if (mMarche2 && mMarche2[1]) {
-                                        marche = corrigerPointMarche(mMarche2[1]);
+                                        marche = corrigerPointMarche(mMarche2[1], meta.sport);
                                         reste = resteSansResidu.slice(0, mMarche2.index).trim();
                                     }
                                 }

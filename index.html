@@ -2663,7 +2663,15 @@
             lignes.push(`${emoji} <b>${titre}</b>`);
             lignes.push('');
             lignes.push(`📊 Opérations clôturées : <b>${stats.nb}</b>`);
-            lignes.push(`✅ Gagnées : <b>${stats.gagnees}</b>   ❌ Perdues : <b>${stats.perdues}</b>`);
+            // "Rentables/Non rentables", pas "Gagnées/Perdues" : ce ne sont pas des paris
+            // classiques où un camp gagne et l'autre perd — c'est de l'arbitrage, censé être
+            // rentable par construction sur CHAQUE opération. Une opération "non rentable" ne
+            // veut jamais dire qu'un pari a été perdu au sens sportif ; ça veut dire qu'un
+            // aléa d'EXÉCUTION (cote qui a bougé avant de miser, bookmaker qui a limité/annulé
+            // un pari, sauvetage nécessaire) a rogné ou inversé le profit théorique. "Gagnées/
+            // Perdues" laissait croire à un pari misé au hasard, alors que le vrai signal ici
+            // est la rentabilité réelle après exécution.
+            lignes.push(`✅ Rentables : <b>${stats.gagnees}</b>   ⚠️ Non rentables : <b>${stats.perdues}</b>`);
             if (stats.sauvetages > 0) lignes.push(`🚨 Sauvetages effectués : <b>${stats.sauvetages}</b>`);
             lignes.push(`🎯 Taux de réussite : <b>${stats.tauxReussite}%</b>`);
             lignes.push(`📈 ROI moyen par opération : <b>${stats.roiMoyen}%</b>`);
@@ -2680,17 +2688,30 @@
             return lignes.join('\n');
         }
 
+        // Calcule la date de départ d'une période de récap, toujours ramenée à MINUIT — jamais
+        // l'heure actuelle conservée. Les dates stockées dans l'historique (voir parserDateFr
+        // ci-dessus) sont TOUJOURS à minuit ; comparer à une date de départ qui garde l'heure
+        // courante décale silencieusement la fenêtre et exclut les opérations du jour pile à
+        // la limite. Bug réel constaté : un récap "semaine" lancé à 21h21 ratait TOUTE la
+        // journée d'il y a exactement 7 jours (minuit ce jour-là < 21h21 cette même date),
+        // réduisant silencieusement la fenêtre à 6 jours pleins au lieu de 7. new Date() avec
+        // un jour hors plage du mois (ex. jour - 30) fait automatiquement remonter au mois
+        // précédent correctement, pas besoin de setDate() séparé.
+        function calculerDateDebutPeriode(type, maintenant) {
+            if (type === 'jour') return new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate());
+            if (type === 'semaine') return new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate() - 7);
+            return new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate() - 30);
+        }
+
         async function publierRecap(type) {
             const maintenant = new Date();
-            let depuisDate, titre, emoji;
+            const depuisDate = calculerDateDebutPeriode(type, maintenant);
+            let titre, emoji;
             if (type === 'jour') {
-                depuisDate = new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate());
                 titre = 'RÉCAP DU JOUR'; emoji = '🌙';
             } else if (type === 'semaine') {
-                depuisDate = new Date(maintenant); depuisDate.setDate(depuisDate.getDate() - 7);
                 titre = 'RÉCAP DE LA SEMAINE'; emoji = '📅';
             } else {
-                depuisDate = new Date(maintenant); depuisDate.setDate(depuisDate.getDate() - 30);
                 titre = 'RÉCAP DU MOIS'; emoji = '🗓️';
             }
             const stats = calculerStatsPeriode(depuisDate);
@@ -2740,7 +2761,13 @@
         // connu via l'OCR BreakingBet), et résultat en % — jamais en CFA/€.
         function construireLigneJournal(h) {
             const gagne = (h.pCfa || 0) > 0;
-            const emoji = gagne ? '✅' : '❌';
+            // ⚠️ plutôt que ❌ pour une opération non rentable — même symbole que dans le
+            // message de récap agrégé (construireMessageRecap), pour la même raison : ce
+            // n'est jamais un pari "perdu" au sens sportif, mais un aléa d'exécution (cote
+            // qui a bougé, sauvetage nécessaire...). Garder le même langage visuel entre
+            // récap et journal évite qu'un abonné lise deux histoires différentes du même
+            // type d'événement.
+            const emoji = gagne ? '✅' : '⚠️';
             const heureTxt = (typeof h.heure === 'number') ? String(h.heure).padStart(2, '0') + 'h' : '';
             const typeTxt = h.type === 'SAUVETAGE' ? 'SAUVETAGE' : (h.issues === 3 ? '3 ISSUES' : 'SUREBET');
             const contexte = h.alMatch
@@ -2797,15 +2824,13 @@
 
         async function diffuserJournalDetaille(type) {
             const maintenant = new Date();
-            let depuisDate, titre, emoji;
+            const depuisDate = calculerDateDebutPeriode(type, maintenant);
+            let titre, emoji;
             if (type === 'jour') {
-                depuisDate = new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate());
                 titre = 'JOURNAL DU JOUR'; emoji = '🌙';
             } else if (type === 'semaine') {
-                depuisDate = new Date(maintenant); depuisDate.setDate(depuisDate.getDate() - 7);
                 titre = 'JOURNAL DE LA SEMAINE'; emoji = '📅';
             } else {
-                depuisDate = new Date(maintenant); depuisDate.setDate(depuisDate.getDate() - 30);
                 titre = 'JOURNAL DU MOIS'; emoji = '🗓️';
             }
             const stats = calculerStatsPeriode(depuisDate);

@@ -1081,8 +1081,21 @@
             const meta = { edgePct: null, sport: null, dateHeure: null, marcheGlobal: null, blocs: [], texteBrut, totalAnnonce };
 
             for (const l of lignes) {
-                const m = l.match(/(\d+[.,]\d+)\s*%/);
-                if (m) { meta.edgePct = m[1].replace(',', '.'); break; }
+                // Bug réel constaté : l'OCR peut insérer un espace entre CHAQUE caractère du
+                // pourcentage d'edge, ET confondre le point décimal avec la lettre "P" (police
+                // rendant le "." difficile à distinguer d'un "P" à cette taille) — "1.17%" lu
+                // "1 P 1 7%". La règle stricte \d+[.,]\d+% (sans espaces tolérés) ratait alors
+                // totalement l'edge, affichant "?" au lieu du vrai pourcentage. On capture toute
+                // la portion de chiffres/points/virgules/espaces/"P" isolé juste avant le "%",
+                // on la nettoie (espaces retirés, "P"→"."), puis on exige un vrai format
+                // décimal "N.NN" en sortie — jamais un entier seul, qui pourrait être autre
+                // chose (une heure, un numéro de ligne...).
+                const m = l.match(/([\d.,Pp\s]{2,12})%/);
+                if (m) {
+                    const candidat = m[1].replace(/\s+/g, '').replace(/[Pp]/g, '.');
+                    const mPropre = candidat.match(/^(\d+)[.,](\d+)$/);
+                    if (mPropre) { meta.edgePct = `${mPropre[1]}.${mPropre[2]}`; break; }
+                }
             }
             for (const l of lignes) {
                 const found = SPORTS_CONNUS.find(s => normaliserNomSport(l).includes(normaliserNomSport(s)));

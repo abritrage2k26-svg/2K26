@@ -1278,6 +1278,16 @@
                         // Yulaev Ufa"). Laisser marché vide dans ce cas est préférable : ça reste
                         // honnête et déclenche l'avertissement "marché non détecté" plutôt qu'une
                         // valeur fausse affichée avec la même assurance qu'une vraie.
+                        // Confusion OCR classique : "X2"/"X1" lu avec un "x" minuscule collé au
+                        // "X" majuscule ("Xx2" au lieu de "X2") — même mécanisme que "VVomen"
+                        // pour "Women". Sans ce correctif, la règle de marché ci-dessous (qui
+                        // exige des MAJUSCULES pures) rejetait "Xx2" comme illisible et l'app
+                        // retombait sur la DÉDUCTION par complémentarité (AH1↔AH2) plutôt que de
+                        // garder le VRAI libellé du bookmaker — resultat logiquement équivalent,
+                        // mais un libellé ("AH2(0.5)") que l'opérateur ne retrouve pas forcément
+                        // tel quel sur l'interface réelle du bookmaker (qui affiche "X2"). Bug
+                        // réel constaté sur une alerte Corners Deportivo Cuenca - Mushuc Runa.
+                        reste = reste.replace(/\bXx([12])\b/gi, 'X$1');
                         // Lookbehind (pas juste "?:^|\s") pour tolérer un marché collé SANS espace
                         // juste après une parenthèse de qualificatif ("(Corners)AH1(-0.5)", sans
                         // espace entre les deux, comme le rend souvent l'OCR sur les marchés
@@ -1345,6 +1355,8 @@
                         // Même résidu isolé (chiffre ou lettre) que dans la branche principale
                         // (voir plus haut) — un caractère parasite entre marché et cote.
                         reste = reste.replace(/(\(-?\d+(?:\.\d+)?\))\s+[a-zA-Z0-9]{1,2}\s*$/, '$1').trim();
+                        // Même correctif "Xx2"/"Xx1" -> "X2"/"X1" que dans la branche principale.
+                        reste = reste.replace(/\bXx([12])\b/gi, 'X$1');
                             const mMarche = reste.match(/(?<=^|\s|\))([A-Z0-9]{1,4}(?:\s?\([^)]{0,15}\))*)\s*$/);
                             if (mMarche && mMarche[1]) {
                                 marche = corrigerPointMarche(mMarche[1]);
@@ -1374,6 +1386,13 @@
                     // Confusion OCR classique : le "W" lu comme deux "V" collés (surtout dans
                     // "(Women)", très fréquent sur les alertes féminines).
                     reste = reste.replace(/VVomen/gi, 'Women');
+                    // Tiret résiduel laissé en toute fin de "reste" une fois le marché retiré
+                    // (ex. "...Mushuc —" après extraction de "AH1(-0.5)" juste après ce tiret
+                    // dans le texte brut) — jamais un vrai morceau du nom d'équipe, qui ne se
+                    // termine jamais par un tiret isolé. .trim() seul ne le retire pas (ce n'est
+                    // pas un espace). Bug réel constaté : "Deportivo Cuenca (Corners)-Mushuc —"
+                    // gardait ce tiret en fin de nom avant recollement de la suite du nom.
+                    reste = reste.replace(/[-–—]\s*$/, '').trim();
                     const bloc = { bookmaker, match: reste, ligue: '', marche, cote, coteReconstituee };
                     const suivante = lignes[i + 1] || '';
                     // Rejette `suivante` comme ligue UNIQUEMENT si elle ressemble elle-même à la
@@ -1398,10 +1417,16 @@
                         // faisait passer pour la ligue entière, et la vraie ligue restait ignorée
                         // plus bas. Le qualificatif optionnel ("+OT", "+AP"...) est toléré en fin
                         // de ligne — sinon "Phillies +OT" échouait le test (espace + "+" non
-                        // reconnus) et retombait dans le même piège que "Yaroslavl" seul.
+                        // reconnus) et retombait dans le même piège que "Yaroslavl" seul. Un
+                        // qualificatif de marché spécial entre parenthèses ("(Corners)") est
+                        // toléré de la même façon : sur un marché spécial, le nom d'équipe coupé
+                        // porte souvent lui-même ce suffixe ("Runa (Corners)"). Bug réel constaté
+                        // sans cette tolérance : "Runa (Corners)" (fin du nom de l'équipe 2)
+                        // était pris à tort pour la LIGUE entière, tronquant le nom du match et
+                        // perdant la vraie ligue ("Soccer. Ecuador - Serie A Corners").
                         const ressembleLigue = (l2) => l2.includes('.') || SPORTS_CONNUS.some(s => normaliserNomSport(l2).includes(normaliserNomSport(s)));
                         const apresSuivante = lignes[i + 2] || '';
-                        if (!ressembleLigue(suivante) && /^[a-zà-öø-ÿ]{2,20}(\s*\+[a-zà-öø-ÿ]{1,10})?$/i.test(suivante.trim()) && ressembleLigue(apresSuivante)) {
+                        if (!ressembleLigue(suivante) && /^[a-zà-öø-ÿ]{2,20}(\s*\+[a-zà-öø-ÿ]{1,10})?(\s*\([^)]{2,20}\))?$/i.test(suivante.trim()) && ressembleLigue(apresSuivante)) {
                             bloc.match = (bloc.match + ' ' + suivante).trim();
                             bloc.ligue = apresSuivante.replace(/vv/gi, m => m[0] === m[0].toUpperCase() ? "W" : "w");
                             i += 2; // consomme le reste du nom ET la vraie ligue, pas seulement l'un des deux

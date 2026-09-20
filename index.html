@@ -547,15 +547,15 @@
                             </div>
                             <div class="grid grid-cols-2 gap-4">
                                 <div class="text-center"><label id="labelCoteSoft" class="text-[8px] text-slate-500 uppercase">Cote Soft</label><input type="number" id="coteS" placeholder="0.00" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none"><p id="minSoft" class="text-[7px] text-slate-600 uppercase mt-1">min : —</p><p id="besoinSoft" class="text-[7px] uppercase mt-0.5"></p><p id="palierCoteS" class="text-[7px] font-black uppercase mt-0.5"></p></div>
-                                <div class="text-center"><label id="labelCotePin" class="text-[8px] text-slate-500 uppercase">Cote Pin</label>
-                                    <!-- Toggle du côté fixe (droite) : Pinnacle (comportement historique, par
-                                    défaut) ou l'AUTRE soft, pour un arb 100% entre softs (1xBet vs 1Win). Le
-                                    libellé du 2e bouton se met à jour dynamiquement (majBoutonsBkFixe) selon
-                                    ce qui est choisi côté "Cote Soft" à gauche. -->
-                                    <div class="flex gap-1 justify-center mt-1 mb-1">
-                                        <button type="button" onclick="selectBkFixe('pinnacle')" id="btnBkFixePin" class="bk-fixe-btn active px-2 py-0.5 rounded text-[7px] font-black border border-red-500/30 bg-red-500/10 text-red-400 uppercase">Pinnacle</button>
-                                        <button type="button" onclick="selectBkFixe('autre')" id="btnBkFixeAutre" class="bk-fixe-btn px-2 py-0.5 rounded text-[7px] font-black border border-blue-600/30 bg-blue-600/10 text-blue-600 uppercase">1Win</button>
-                                    </div>
+                                <div class="text-center"><label id="labelCotePin" onclick="toggleBkFixe()" class="text-[8px] text-slate-500 uppercase cursor-pointer select-none hover:text-slate-300 transition-colors">Cote Pin ⇄</label>
+                                    <!-- Le libellé lui-même est le sélecteur du côté fixe (droite) — Pinnacle
+                                    (comportement historique, par défaut) ou l'AUTRE soft, pour un arb 100% entre
+                                    softs (1xBet vs 1Win). Un clic bascule entre les deux (toggleBkFixe). Fusionné
+                                    à la demande de l'utilisateur : avant, un texte "Cote Pinnacle" séparé ET deux
+                                    boutons juste en dessous répétaient la même information — un seul élément
+                                    cliquable suffit, et il continue de basculer automatiquement tout seul dès
+                                    qu'une alerte est collée (voir collerAlerte), sans jamais nécessiter de clic
+                                    manuel dans le cas normal. -->
                                     <input type="number" id="coteP" placeholder="0.00" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none text-emerald-500"><p id="minPin" class="text-[7px] text-slate-600 uppercase mt-1">min : 5 €</p><p id="besoinPin" class="text-[7px] uppercase mt-0.5"></p><p id="palierCoteP" class="text-[7px] font-black uppercase mt-0.5"></p></div>
                             </div>
                             <!-- Sélecteur 2 / 3 issues -->
@@ -3760,18 +3760,28 @@
             const labelSoft = document.getElementById('labelCoteSoft');
             const labelPin = document.getElementById('labelCotePin');
             if (labelSoft) labelSoft.innerText = softSelected === '1xbet' ? 'Cote 1xBet' : softSelected === '1win' ? 'Cote 1Win' : 'Cote Soft';
-            if (labelPin) labelPin.innerText = bkFixe === '1xbet' ? 'Cote 1xBet' : bkFixe === '1win' ? 'Cote 1Win' : 'Cote Pinnacle';
+            // Le "⇄" reste visible en permanence pour signaler que ce libellé est cliquable
+            // (bascule Pinnacle/autre soft) — sans lui, rien à l'écran n'indiquerait que ce
+            // texte n'est pas juste une légende statique comme "Cote Soft" à gauche. Texte
+            // simple (innerText, pas de span imbriqué) : cohérent avec le reste du code, qui
+            // lit toujours ces libellés via innerText.
+            if (labelPin) labelPin.innerText = (bkFixe === '1xbet' ? 'Cote 1xBet' : bkFixe === '1win' ? 'Cote 1Win' : 'Cote Pinnacle') + ' ⇄';
         }
 
+        // Bascule le côté fixe (droite) entre Pinnacle et l'autre soft — remplace les deux
+        // boutons séparés d'avant (fusionnés à la demande de l'utilisateur) : un simple clic
+        // sur le libellé "Cote Pinnacle"/"Cote 1Win" fait l'aller-retour entre les deux seules
+        // options possibles, sans avoir besoin de choisir explicitement laquelle activer.
+        function toggleBkFixe() {
+            selectBkFixe(bkFixe === 'pinnacle' ? 'autre' : 'pinnacle');
+        }
+
+        // Ne gère plus que les libellés désormais (les boutons séparés Pinnacle/1Win ont été
+        // retirés du HTML, fusionnés dans le libellé cliquable ci-dessus) — le nom conservé
+        // pour ne pas devoir modifier tous ses points d'appel (selectSoft, selectBkFixe,
+        // restaurerZoneExec, chargement de page).
         function majBoutonsBkFixe() {
             majLabelsCote();
-            const btnPin = document.getElementById('btnBkFixePin');
-            const btnAutre = document.getElementById('btnBkFixeAutre');
-            if (!btnPin || !btnAutre) return;
-            const autreSoft = softSelected === '1xbet' ? '1win' : '1xbet';
-            btnAutre.textContent = autreSoft === '1xbet' ? '1xBet' : '1Win';
-            btnPin.classList.toggle('active', bkFixe === 'pinnacle');
-            btnAutre.classList.toggle('active', bkFixe !== 'pinnacle');
         }
 
         function selectBkFixe(mode) {

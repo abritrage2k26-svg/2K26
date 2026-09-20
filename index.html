@@ -14,6 +14,8 @@
         .hidden-app { display: none !important; }
         .btn-soft { opacity: 0.3; transition: all 0.2s; border: 2px solid transparent; }
         .btn-soft.active { opacity: 1; border-color: white; transform: translateY(-2px); }
+        .bk-fixe-btn { opacity: 0.4; transition: all 0.2s; }
+        .bk-fixe-btn.active { opacity: 1; box-shadow: 0 0 0 1.5px currentColor inset; }
         .btn-sauv-soft { opacity: 0.3; transition: all 0.2s; border: 2px solid transparent; }
         .btn-sauv-soft.active { opacity: 1; border-color: #ef4444; transform: translateY(-2px); box-shadow: 0 0 12px rgba(239,68,68,0.4); }
         .copy-active:active { transform: scale(0.95); background: rgba(255,255,255,0.05); }
@@ -496,7 +498,6 @@
                                 <button onclick="selectSoft('1xbet')" id="btn-1xbet" class="btn-soft bg-blue-400/10 p-4 rounded-2xl border border-blue-400/20"><span class="text-[10px] font-black text-blue-400 uppercase">1xBet</span></button>
                                 <button onclick="selectSoft('1win')" id="btn-1win" class="btn-soft bg-blue-600/10 p-4 rounded-2xl border border-blue-600/30"><span class="text-[10px] font-black text-blue-600 uppercase">1Win</span></button>
                             </div>
-                            <p id="suggestionSoftJour" class="hidden text-[8px] text-amber-400 uppercase font-black text-center -mt-3"></p>
                             <!-- Contexte du signal — pré-rempli par l'OCR quand disponible, mais TOUJOURS
                                  éditable manuellement. Sert de filet quand l'OCR ne lit pas (ou mal) le
                                  sport/match/ligue/marché : sans ces champs, le signal Telegram partait
@@ -546,7 +547,16 @@
                             </div>
                             <div class="grid grid-cols-2 gap-4">
                                 <div class="text-center"><label class="text-[8px] text-slate-500 uppercase">Cote Soft</label><input type="number" id="coteS" placeholder="0.00" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none"><p id="minSoft" class="text-[7px] text-slate-600 uppercase mt-1">min : —</p><p id="besoinSoft" class="text-[7px] uppercase mt-0.5"></p><p id="palierCoteS" class="text-[7px] font-black uppercase mt-0.5"></p></div>
-                                <div class="text-center"><label class="text-[8px] text-slate-500 uppercase">Cote Pin</label><input type="number" id="coteP" placeholder="0.00" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none text-emerald-500"><p id="minPin" class="text-[7px] text-slate-600 uppercase mt-1">min : 5 €</p><p id="besoinPin" class="text-[7px] uppercase mt-0.5"></p><p id="palierCoteP" class="text-[7px] font-black uppercase mt-0.5"></p></div>
+                                <div class="text-center"><label class="text-[8px] text-slate-500 uppercase">Cote Pin</label>
+                                    <!-- Toggle du côté fixe (droite) : Pinnacle (comportement historique, par
+                                    défaut) ou l'AUTRE soft, pour un arb 100% entre softs (1xBet vs 1Win). Le
+                                    libellé du 2e bouton se met à jour dynamiquement (majBoutonsBkFixe) selon
+                                    ce qui est choisi côté "Cote Soft" à gauche. -->
+                                    <div class="flex gap-1 justify-center mt-1 mb-1">
+                                        <button type="button" onclick="selectBkFixe('pinnacle')" id="btnBkFixePin" class="bk-fixe-btn active px-2 py-0.5 rounded text-[7px] font-black border border-red-500/30 bg-red-500/10 text-red-400 uppercase">Pinnacle</button>
+                                        <button type="button" onclick="selectBkFixe('autre')" id="btnBkFixeAutre" class="bk-fixe-btn px-2 py-0.5 rounded text-[7px] font-black border border-blue-600/30 bg-blue-600/10 text-blue-600 uppercase">1Win</button>
+                                    </div>
+                                    <input type="number" id="coteP" placeholder="0.00" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none text-emerald-500"><p id="minPin" class="text-[7px] text-slate-600 uppercase mt-1">min : 5 €</p><p id="besoinPin" class="text-[7px] uppercase mt-0.5"></p><p id="palierCoteP" class="text-[7px] font-black uppercase mt-0.5"></p></div>
                             </div>
                             <!-- Sélecteur 2 / 3 issues -->
                             <div class="flex items-center gap-2">
@@ -617,9 +627,15 @@
                                 <div class="text-center hidden">
                                     <input type="number" id="sauvCoteS" class="hidden">
                                 </div>
-                                <!-- Seul champ à saisir -->
+                                <!-- Cible du sauvetage : Pinnacle (comportement historique) ou l'AUTRE soft,
+                                pour un sauvetage 100% entre softs (résolue automatiquement en fonction du
+                                soft d'origine choisi juste au-dessus — voir majBoutonsSauvBkCible). -->
                                 <div class="text-center">
-                                    <label class="text-[8px] text-red-400 uppercase font-black">⚡ Nouvelle Cote Pinnacle (Chutée)</label>
+                                    <label class="text-[8px] text-red-400 uppercase font-black">⚡ Nouvelle Cote (Chutée) — Cible du sauvetage</label>
+                                    <div class="flex gap-1 justify-center mt-1 mb-1">
+                                        <button type="button" onclick="selectSauvBkCible('pinnacle')" id="btnSauvBkCiblePin" class="bk-fixe-btn active px-2 py-0.5 rounded text-[7px] font-black border border-red-500/30 bg-red-500/10 text-red-400 uppercase">Pinnacle</button>
+                                        <button type="button" onclick="selectSauvBkCible('autre')" id="btnSauvBkCibleAutre" class="bk-fixe-btn px-2 py-0.5 rounded text-[7px] font-black border border-blue-600/30 bg-blue-600/10 text-blue-600 uppercase">1Win</button>
+                                    </div>
                                     <input type="number" id="sauvCoteP" step="0.01" placeholder="Saisir uniquement cette cote" class="w-full bg-black/40 border border-red-500/50 p-4 rounded-xl text-white font-bold text-center outline-none focus:border-red-500">
                                 </div>
                             </div>
@@ -696,6 +712,17 @@
 
     <script>
         let b1X = 0, bM = 0, bP = 0, tx = 656, hist = [], op = null, opDeadline = null, departCap = 0, dailyCount = 0, softSelected = null, issuesMode = 2, timerInterval = null, timeLeft = 60, compoundMode = false, copiesSoftEffectuees = 0;
+        // Bookmaker du "côté fixe" (droite) en mode 2 issues — 'pinnacle' par défaut
+        // (comportement historique inchangé), ou l'AUTRE soft ('1xbet'/'1win', celui que
+        // softSelected ne pointe pas déjà) pour un arbitrage 100% entre softs, sans Pinnacle.
+        // Introduit à la demande explicite de l'utilisateur : les arbs 1xBet-1Win sont
+        // désormais un type d'opération à part entière, pas une exception non supportée.
+        let bkFixe = 'pinnacle';
+        // Même principe que bkFixe, mais pour la CIBLE d'un sauvetage — 'pinnacle' par défaut
+        // (comportement historique), ou l'autre soft pour sauver une position vers 1xBet/1Win
+        // plutôt que vers Pinnacle. Indépendante de bkFixe : un sauvetage peut survenir sur
+        // une opération d'origine qui utilisait déjà, ou non, ce même mécanisme.
+        let sauvBkCible = 'pinnacle';
         // Revenu par mois — historique PERSISTÉ, indépendant de la liste actuelle des
         // abonnés (retirer un abonné n'efface jamais son paiement déjà encaissé). Objet
         // { 'YYYY-MM': montant } : chaque mois garde son propre total, jamais écrasé par le
@@ -753,7 +780,7 @@
                 const champSoft = document.getElementById('minSoft');
                 if (champSoft) champSoft.textContent = mSoft ? mSoft.label : 'min : —';
                 const champPin = document.getElementById('minPin');
-                if (champPin) champPin.textContent = minPourBookmaker('pinnacle').label;
+                if (champPin) champPin.textContent = minPourBookmaker(bkFixe).label;
             } else {
                 [1, 2, 3].forEach(n => {
                     const role = bkSel[n];
@@ -1634,35 +1661,35 @@
                 });
             } else {
                 setIssues(2);
-                let blocPin = null, blocSoft = null, roleSoft = null;
+                let blocPin = null, blocSoft1 = null, roleSoft1 = null, blocSoft2 = null, roleSoft2 = null;
+                // Garde le PREMIER soft trouvé pour softSelected (gauche), le SECOND pour le
+                // côté fixe (droite) quand aucune jambe Pinnacle n'est présente — bug réel
+                // constaté avant ce correctif : "else if (role)" écrasait blocSoft à chaque
+                // itération, ne gardant QUE le dernier soft trouvé ; le premier (et sa cote)
+                // disparaissait purement et simplement dès que l'alerte opposait deux softs.
                 meta.blocs.forEach(b => {
                     const role = detecterRoleBookmaker(b.bookmaker);
-                    if (role === 'pinnacle') blocPin = b;
-                    else if (role) { blocSoft = b; roleSoft = role; }
+                    if (role === 'pinnacle') { blocPin = b; }
+                    else if (role && !roleSoft1) { blocSoft1 = b; roleSoft1 = role; }
+                    else if (role && !roleSoft2) { blocSoft2 = b; roleSoft2 = role; }
                 });
-                if (roleSoft) selectSoft(roleSoft);
+                if (roleSoft1) selectSoft(roleSoft1);
+                // Arb 100% entre softs (aucune jambe Pinnacle détectée) : bascule
+                // AUTOMATIQUEMENT le côté fixe (droite) sur l'autre soft plutôt que de rejeter
+                // l'alerte — c'est désormais un type d'opération à part entière (demande
+                // explicite de l'utilisateur), plus une anomalie à signaler et ignorer.
+                // selectBkFixe('autre') résout tout seul vers "l'autre soft que softSelected".
+                if (!blocPin && roleSoft2) selectBkFixe('autre');
+                else selectBkFixe('pinnacle');
+                const blocFixe = blocPin || blocSoft2;
                 // Vide TOUJOURS le champ quand son bloc n'est pas trouvé, quel qu'en soit le
-                // motif (bloc manquant, cote illisible, aucune jambe Pinnacle...) — jamais de
-                // cas particulier qui laisserait une valeur intacte. Avant ce correctif, seul
-                // le cas "aucune jambe Pinnacle" vidait Cote Pin ; un bloc simplement absent
-                // (ex. séparateur d'équipes non reconnu par l'OCR — bug réel corrigé par
-                // ailleurs, mais le prochain cas du même genre aurait eu la même conséquence)
-                // laissait passer une cote périmée d'une alerte précédente sans aucun signal,
-                // pouvant fausser un edge calculé en silence.
-                if (blocSoft && blocSoft.cote) { document.getElementById('coteS').value = blocSoft.cote; }
+                // motif (bloc manquant, cote illisible...) — jamais de cas particulier qui
+                // laisserait une valeur intacte, pour ne jamais faire passer une cote périmée
+                // d'une alerte précédente pour une valeur fraîchement lue.
+                if (blocSoft1 && blocSoft1.cote) { document.getElementById('coteS').value = blocSoft1.cote; }
                 else { document.getElementById('coteS').value = ''; }
-                if (blocPin && blocPin.cote) { document.getElementById('coteP').value = blocPin.cote; }
+                if (blocFixe && blocFixe.cote) { document.getElementById('coteP').value = blocFixe.cote; }
                 else { document.getElementById('coteP').value = ''; }
-                // Alimente le contrôle edge annoncé vs edge calculé avec TOUTES les cotes
-                // valides du bloc (2 blocs, quels que soient leurs rôles) — pas seulement
-                // soft+pin. Avant ce correctif, quand aucune jambe Pinnacle n'était détectée
-                // (2 bookmakers softs entre eux), `blocSoft` ne retenait que le DERNIER bloc
-                // soft trouvé (écrasé dans la boucle ci-dessus) et `blocPin` restait vide — le
-                // contrôle ne recevait donc qu'une seule cote sur les deux, jamais assez pour
-                // se déclencher (`cotesUtilisees.length >= 2`). Bug réel constaté : un edge
-                // annoncé à 9.05% (en réalité 5.05%, "9"/"5" confondus par l'OCR) passait
-                // totalement inaperçu dans ce cas précis, alors que le même contrôle l'aurait
-                // détecté sans problème si une jambe Pinnacle avait été présente.
                 meta.blocs.forEach(b => { if (b.cote) cotesUtilisees.push(b.cote); });
             }
             if (typeof validerProfitMin === 'function') validerProfitMin();
@@ -1699,9 +1726,10 @@
             if (meta.marcheGlobal && !/^(1x2|match|winner|résultat|full ?time)$/i.test(meta.marcheGlobal)) {
                 avertissements.push(`🎯 MARCHÉ SPÉCIAL détecté : ${meta.marcheGlobal.toUpperCase()} — ce n'est PAS un pari sur le résultat du match. Sur chaque bookmaker, sélectionne bien le marché "${meta.marcheGlobal}" (pas le résultat classique), sinon le pari placé ne correspondra pas à celui de l'alerte.`);
             }
-            if (nb === 2 && meta.blocs.every(b => detecterRoleBookmaker(b.bookmaker) !== 'pinnacle')) {
-                avertissements.push(`🚫 Aucune jambe Pinnacle détectée dans cette alerte (2 bookmakers softs entre eux) — ça ne correspond pas à ta stratégie. Le champ "Cote Pin" a été vidé par précaution. Ignore cette alerte.`);
-            }
+            // Note : l'ancien avertissement "Aucune jambe Pinnacle détectée — ignore cette
+            // alerte" a été retiré, à la demande explicite de l'utilisateur — un arb 100%
+            // entre softs (1xBet vs 1Win) est désormais un type d'opération à part entière,
+            // géré nativement (voir bkFixe), plus une anomalie à signaler.
             const blocsCotesReconstituees = meta.blocs.filter(b => b.coteReconstituee);
             if (blocsCotesReconstituees.length) {
                 const detail = blocsCotesReconstituees.map(b => { const role = detecterRoleBookmaker(b.bookmaker); return `${role ? (BK_NOMS_AFFICHES[role] || b.bookmaker) : b.bookmaker} → ${b.cote}`; }).join(', ');
@@ -1833,9 +1861,15 @@
                 const arb = (1/cs) + (1/cp);
                 const pctSoft = (1/cs)/arb, pctPin = (1/cp)/arb;
                 const minSoft = minPourBookmaker(softSelected);
-                const minPin = minPourBookmaker('pinnacle');
+                // bkFixe (Pinnacle par défaut, ou l'autre soft pour un arb 100% entre softs) —
+                // seul Pinnacle a besoin d'une conversion EUR→CFA (`* tx`), les softs sont déjà
+                // en CFA nativement.
+                const minPin = minPourBookmaker(bkFixe);
                 if (minSoft) tMinRequis = Math.max(tMinRequis, minSoft.valeur / pctSoft);
-                if (minPin) tMinRequis = Math.max(tMinRequis, (minPin.valeur * tx) / pctPin);
+                if (minPin) {
+                    const minPinCFA = bkFixe === 'pinnacle' ? minPin.valeur * tx : minPin.valeur;
+                    tMinRequis = Math.max(tMinRequis, minPinCFA / pctPin);
+                }
             } else {
                 const cotes = [lireCote('cote1'), lireCote('cote2'), lireCote('cote3')];
                 if (cotes.some(c => !(c > 1))) return null;
@@ -2102,7 +2136,16 @@
         function traduireMarche(marche, matchStr) {
             if (!marche) return null;
             const m = marche.trim().toUpperCase().replace(/\s+/g, '');
-            const teams = (matchStr || '').split(/\s*-\s*/);
+            // [-–—] et pas seulement "-" : l'OCR (parserAlerteBreakingBet) produit
+            // systématiquement un tiret demi-cadratin "–" entre les deux noms d'équipe (voir
+            // tous les exemples réels de cette conversation : "Fiji – Solomon Islands",
+            // "Dundalk – Shelbourne"...), jamais un tiret court "-". Bug réel constaté sans
+            // cette tolérance : le split échouait systématiquement sur un VRAI match issu
+            // d'une alerte, mettant tout le texte dans eqA et laissant eqB retomber sur le
+            // générique "l'équipe 2" — "Victoire Real Madrid – FC Barcelona" au lieu de
+            // "Victoire Real Madrid", envoyé tel quel aux abonnés dans le message Telegram et
+            // le lien calculatrice.
+            const teams = (matchStr || '').split(/\s*[-–—]\s*/);
             const eqA = teams[0] ? teams[0].trim() : 'l\'équipe 1';
             const eqB = teams[1] ? teams[1].trim() : 'l\'équipe 2';
 
@@ -2230,14 +2273,25 @@
             params.set('tx', tx);
             if (op.type === 'SAUVETAGE') {
                 // Formulaire différent côté calculatrice (voir mode=sauvetage) : l'abonné a
-                // DÉJÀ misé sur le soft avant que la cote Pinnacle bouge, donc il tape SON
-                // propre montant déjà engagé, pas un capital à répartir. On transmet la
-                // cote D'ORIGINE du soft (pour le scénario "si le soft gagne quand même") et
-                // la NOUVELLE cote Pinnacle de sauvetage (pour calculer la mise protectrice).
+                // DÉJÀ misé sur le soft avant que la cote bouge, donc il tape SON propre
+                // montant déjà engagé, pas un capital à répartir. On transmet la cote
+                // D'ORIGINE du soft (pour le scénario "si le soft gagne quand même") et la
+                // NOUVELLE cote de sauvetage (pour calculer la mise protectrice) — bookmaker
+                // cible généralisé (op.sauvBkCible), Pinnacle par défaut si absent (anciennes
+                // opérations enregistrées avant ce champ).
                 params.set('mode', 'sauvetage');
-                const nomSoft = op.softId === '1xbet' ? '1xBet' : op.softId === '1win' ? '1Win' : (op.softId || '?');
+                // op.softId pour un sauvetage vaut "SAUVETAGE-1XBET" (préfixé, majuscules) —
+                // jamais "1xbet" tel quel. Bug réel constaté sans ce retrait de préfixe : le
+                // lien envoyait littéralement n1=SAUVETAGE-1XBET à la calculatrice, qui
+                // l'aurait affiché tel quel aux abonnés au lieu de "1xBet". Même retrait déjà
+                // fait dans construireMessageTelegram (voir plus bas) pour le texte du
+                // message — manquait ici pour le lien.
+                const softIdPropre = (op.softId || '').replace(/^SAUVETAGE-/i, '').toLowerCase();
+                const nomSoft = softIdPropre === '1xbet' ? '1xBet' : softIdPropre === '1win' ? '1Win' : (softIdPropre || '?');
+                const bkCible = op.sauvBkCible || 'pinnacle';
+                const nomCible = bkCible === '1xbet' ? '1xBet' : bkCible === '1win' ? '1Win' : 'Pinnacle';
                 params.set('n1', nomSoft); params.set('c1', op.os);
-                params.set('n2', 'Pinnacle'); params.set('c2', op.opn);
+                params.set('n2', nomCible); params.set('c2', op.opn);
             } else if (op.issues === 3 && op.sides3) {
                 op.sides3.forEach((s, i) => {
                     const nom = s.bk === 'pinnacle' ? 'Pinnacle' : s.bk === '1xbet' ? '1xBet' : s.bk === '1win' ? '1Win' : (s.bk || ('Côté ' + (i + 1)));
@@ -2249,7 +2303,11 @@
                 const nomSoft = op.softId === '1xbet' ? '1xBet' : op.softId === '1win' ? '1Win' : (op.softId || '?');
                 params.set('n1', nomSoft); params.set('c1', op.os);
                 if (op.descS) params.set('d1', formaterMarcheAffiche(op.descS, op.marcheCodeS));
-                params.set('n2', 'Pinnacle'); params.set('c2', op.opn);
+                // Bookmaker du côté droit généralisé (op.bk2) — Pinnacle par défaut si absent
+                // (anciennes opérations enregistrées avant ce champ).
+                const bkDroit = op.bk2 || 'pinnacle';
+                const nomDroit = bkDroit === '1xbet' ? '1xBet' : bkDroit === '1win' ? '1Win' : 'Pinnacle';
+                params.set('n2', nomDroit); params.set('c2', op.opn);
                 if (op.descP) params.set('d2', formaterMarcheAffiche(op.descP, op.marcheCodeP));
             }
             return base.replace(/\/?$/, '/') + '?' + params.toString();
@@ -2288,16 +2346,20 @@
                 });
             } else if (estSauvetage) {
                 const nomSoft = (op.softId || '').replace('SAUVETAGE-', '').toUpperCase();
+                const bkCible = op.sauvBkCible || 'pinnacle';
+                const nomCible = bkCible === '1xbet' ? '1xBet' : bkCible === '1win' ? '1Win' : 'Pinnacle';
                 lignes.push(`🔵 <b>${escapeTelegramHtml(nomSoft || '?')}</b> — cote d'origine ${op.os}`);
-                lignes.push(`🔴 <b>Pinnacle</b> — nouvelle cote de sauvetage @ ${op.opn}`);
+                lignes.push(`🔴 <b>${escapeTelegramHtml(nomCible)}</b> — nouvelle cote de sauvetage @ ${op.opn}`);
             } else {
                 const arb2 = (1 / op.os) + (1 / op.opn);
                 const pctSoft = (((1 / op.os) / arb2) * 100).toFixed(1);
                 const pctPin = (100 - pctSoft).toFixed(1);
                 const nomSoft = op.softId === '1xbet' ? '1xBet' : op.softId === '1win' ? '1Win' : (op.softId || '?');
+                const bkDroit = op.bk2 || 'pinnacle';
+                const nomDroit = bkDroit === '1xbet' ? '1xBet' : bkDroit === '1win' ? '1Win' : 'Pinnacle';
                 lignes.push(`🔵 <b>${escapeTelegramHtml(nomSoft)}</b> @ ${op.os} → <b>${pctSoft}%</b> de ton budget`);
                 if (op.descS) lignes.push(`   ↳ Parier sur : <b>${escapeTelegramHtml(formaterMarcheAffiche(op.descS, op.marcheCodeS))}</b>`);
-                lignes.push(`🔴 <b>Pinnacle</b> @ ${op.opn} → <b>${pctPin}%</b> de ton budget`);
+                lignes.push(`🔴 <b>${escapeTelegramHtml(nomDroit)}</b> @ ${op.opn} → <b>${pctPin}%</b> de ton budget`);
                 if (op.descP) lignes.push(`   ↳ Parier sur : <b>${escapeTelegramHtml(formaterMarcheAffiche(op.descP, op.marcheCodeP))}</b>`);
             }
             lignes.push('');
@@ -2309,7 +2371,7 @@
             if (lienCalc) {
                 lignes.push('');
                 lignes.push(estSauvetage
-                    ? `🧮 <a href="${lienCalc}">Calcule ta mise de protection</a> — tape ce que tu avais déjà misé, le montant à placer sur Pinnacle s'affiche en direct.`
+                    ? `🧮 <a href="${lienCalc}">Calcule ta mise de protection</a> — tape ce que tu avais déjà misé, le montant à placer s'affiche en direct.`
                     : `🧮 <a href="${lienCalc}">Calcule ta mise exacte</a> — tape ton capital, la répartition s'affiche en direct.`);
             }
             // Signal discret quand au moins une donnée de CE signal provient d'une
@@ -2516,7 +2578,12 @@
                 return side.bk === 'pinnacle' ? 'Pinnacle' : side.bk === '1xbet' ? '1xBet' : side.bk === '1win' ? '1Win' : (side.bk || null);
             }
             if (h.winner === 's') return h.softId === '1xbet' ? '1xBet' : h.softId === '1win' ? '1Win' : (h.softId || null);
-            if (h.winner === 'p' || h.winner === 'sauv') return 'Pinnacle';
+            if (h.winner === 'p' || h.winner === 'sauv') {
+                // bk2 (opération normale) ou sauvBkCible (sauvetage) généralisés — Pinnacle par
+                // défaut si absent (anciennes opérations enregistrées avant ces champs).
+                const bk = h.type === 'SAUVETAGE' ? (h.sauvBkCible || 'pinnacle') : (h.bk2 || 'pinnacle');
+                return bk === '1xbet' ? '1xBet' : bk === '1win' ? '1Win' : 'Pinnacle';
+            }
             return null;
         }
 
@@ -2952,6 +3019,11 @@
                     document.querySelectorAll('.btn-sauv-soft').forEach(b => b.classList.remove('active'));
                     const btnSauv = document.getElementById('btnSauv-' + softId);
                     if(btnSauv) btnSauv.classList.add('active');
+                    // Même garde-fou que selectSauvSoft : si la cible pointait sur CE soft
+                    // (choisi ici programmatiquement, pas via un clic), la faire basculer sur
+                    // l'autre plutôt que de laisser deux côtés sur le même bookmaker.
+                    if (sauvBkCible === softId) sauvBkCible = softId === '1xbet' ? '1win' : '1xbet';
+                    majBoutonsSauvBkCible();
                     document.getElementById('sauvMiseSoft').value = softId === '1xbet' ? (op.m1X||'') : (op.mM||'');
                     document.getElementById('sauvCoteS').value    = op.os   || '';
                     document.getElementById('sauvCoteP').value    = '';
@@ -2974,6 +3046,10 @@
             document.querySelectorAll('.btn-sauv-soft').forEach(b => b.classList.remove('active'));
             const btn = document.getElementById('btnSauv-' + id);
             if(btn) btn.classList.add('active');
+            // Même garde-fou que selectSoft/bkFixe : si la cible du sauvetage pointait
+            // justement sur ce soft, la faire basculer automatiquement sur l'autre.
+            if (sauvBkCible === id) sauvBkCible = id === '1xbet' ? '1win' : '1xbet';
+            majBoutonsSauvBkCible();
             // Clic manuel : ne pas écraser une saisie déjà en cours.
             // Pré-remplir uniquement si le champ est vide ET qu'une opération correspondante existe.
             const champ = document.getElementById('sauvMiseSoft');
@@ -2981,6 +3057,27 @@
                 const val = id === '1xbet' ? op.m1X : op.mM;
                 if(val) champ.value = val;
             }
+        }
+
+        // Miroir de majBoutonsBkFixe, pour la cible du sauvetage — le nom de "l'autre soft"
+        // dépend du soft d'origine choisi juste au-dessus (les boutons .btn-sauv-soft).
+        function majBoutonsSauvBkCible() {
+            const btnPin = document.getElementById('btnSauvBkCiblePin');
+            const btnAutre = document.getElementById('btnSauvBkCibleAutre');
+            if (!btnPin || !btnAutre) return;
+            let origine = '1xbet';
+            document.querySelectorAll('.btn-sauv-soft').forEach(b => { if (b.classList.contains('active')) origine = b.dataset.id; });
+            const autreSoft = origine === '1xbet' ? '1win' : '1xbet';
+            btnAutre.textContent = autreSoft === '1xbet' ? '1xBet' : '1Win';
+            btnPin.classList.toggle('active', sauvBkCible === 'pinnacle');
+            btnAutre.classList.toggle('active', sauvBkCible !== 'pinnacle');
+        }
+
+        function selectSauvBkCible(mode) {
+            let origine = '1xbet';
+            document.querySelectorAll('.btn-sauv-soft').forEach(b => { if (b.classList.contains('active')) origine = b.dataset.id; });
+            sauvBkCible = mode === 'autre' ? (origine === '1xbet' ? '1win' : '1xbet') : 'pinnacle';
+            majBoutonsSauvBkCible();
         }
 
         async function resetTotalSystem() {
@@ -3098,11 +3195,13 @@
 
         function calculerSauvetage() {
             const cP = lireCote('sauvCoteP');
-            if(!cP || cP <= 1) { afficherToast("Saisie invalide — nouvelle cote Pinnacle requise.", 'danger'); return; }
+            if(!cP || cP <= 1) { afficherToast("Saisie invalide — nouvelle cote requise.", 'danger'); return; }
 
-            // Lire le mode sauvetage actif
+            // Lire le mode sauvetage actif (soft d'ORIGINE, déjà misé)
             let sauvSoftId = '1xbet';
             document.querySelectorAll('.btn-sauv-soft').forEach(b => { if(b.classList.contains('active')) sauvSoftId = b.dataset.id; });
+            // Cible du sauvetage (Pinnacle, ou l'autre soft) — voir sauvBkCible/selectSauvBkCible.
+            const bkCible = sauvBkCible;
 
             let m1X_sauv = 0, mM_sauv = 0, mS_total = 0;
             mS_total = parseFloat(document.getElementById('sauvMiseSoft').value) || 0;
@@ -3120,14 +3219,16 @@
                 return;
             }
 
-            // Égalise EXACTEMENT les deux issues (Pinnacle gagne / soft gagne à sa cote
-            // d'origine) plutôt que de protéger uniquement le scénario "Pinnacle gagne" en
+            // Égalise EXACTEMENT les deux issues (cible gagne / soft gagne à sa cote
+            // d'origine) plutôt que de protéger uniquement le scénario "la cible gagne" en
             // laissant l'autre au hasard (ancienne formule). Dérivée en posant
-            // profit_Pinnacle = profit_Soft et en résolvant pour miseP — se simplifie en
-            // miseP = mise_déjà_placée × cote_origine / nouvelle_cote. Résultat : soit un vrai
-            // profit garanti des deux côtés (si l'arbitrage tient encore malgré la chute de
-            // cote), soit la perte la plus faible possible répartie également — jamais un
-            // résultat où gagner peut donner 0 CFA et l'autre issue une grosse perte.
+            // profit_cible = profit_Soft et en résolvant pour la mise de cible — se simplifie
+            // en mise = mise_déjà_placée × cote_origine / nouvelle_cote. Résultat : soit un
+            // vrai profit garanti des deux côtés (si l'arbitrage tient encore malgré la chute
+            // de cote), soit la perte la plus faible possible répartie également — jamais un
+            // résultat où gagner peut donner 0 CFA et l'autre issue une grosse perte. Formule
+            // valable quelle que soit la cible (Pinnacle ou l'autre soft) — c'est un rapport
+            // de cotes, indépendant de la devise native du bookmaker.
             const miseP_Cfa = mS_total * cSauvOrigine / cP;
             const miseP_Eur = miseP_Cfa / tx;
             const totalEngage = mS_total + miseP_Cfa;
@@ -3136,24 +3237,30 @@
             // exact) pour qu'un sauvetage parfaitement équilibré affiche bien 0 CFA et non -1.
             const profitSauv  = Math.floor(retourFinal - totalEngage + 1e-6);
 
-            // Restituer la réservation Pinnacle de la tentative précédente (op initial 'PARI'
-            // ou sauvetage précédent en cas de recalcul en chaîne) : cet argent n'a jamais été
+            // Restituer la réservation de la tentative précédente (op initial 'PARI' ou
+            // sauvetage précédent en cas de recalcul en chaîne) : cet argent n'a jamais été
             // réellement misé au bookmaker — c'est justement pourquoi on recalcule — donc son
-            // débit doit être annulé avant la nouvelle déduction ci-dessous. Sans cette ligne,
-            // chaque recalcul de sauvetage "perdait" silencieusement l'ancienne réservation,
-            // faisant dériver le solde Pinnacle affiché en dessous du solde réel.
+            // débit doit être annulé avant la nouvelle déduction ci-dessous. Restitué dans le
+            // BON wallet (celui réellement débité alors — op.bk2 pour un 'PARI', ou
+            // op.sauvBkCible pour un sauvetage précédent), pas toujours Pinnacle comme avant.
+            // Sans cette généralisation, un recalcul en chaîne après un premier sauvetage vers
+            // un soft aurait restitué l'argent au MAUVAIS wallet (Pinnacle), faisant dériver
+            // les deux soldes affichés en dessous de la réalité.
             if (op && op.miseP_Cfa) {
-                bP += op.miseP_Cfa;
+                const bkPrecedent = op.type === 'SAUVETAGE' ? (op.sauvBkCible || 'pinnacle') : (op.bk2 || 'pinnacle');
+                if (bkPrecedent === '1xbet') b1X += op.miseP_Cfa;
+                else if (bkPrecedent === '1win') bM += op.miseP_Cfa;
+                else bP += op.miseP_Cfa;
             }
 
             document.getElementById('zoneExec').classList.remove('hidden');
             document.getElementById('migrationBadge').innerText = "🚨 RÉCUPÉRATION DE CAPITAL";
             document.getElementById('migrationBadge').className = "mt-1 px-3 py-1 rounded-full text-[8px] font-black uppercase italic border border-red-500 bg-red-500/10 text-red-500";
 
-            // Masquer le bloc 3ème issue — sauvetage est toujours 2 sides (soft + PIN)
+            // Masquer le bloc 3ème issue — sauvetage est toujours 2 sides (soft + cible)
             document.getElementById('divN').classList.add('hidden');
 
-            // Afficher les mises soft selon le mode
+            // Afficher les mises soft selon le mode d'ORIGINE
             if(sauvSoftId === '1xbet') {
                 document.getElementById('div1X').style.display = 'block';
                 document.getElementById('divM').style.display  = 'none';
@@ -3165,35 +3272,49 @@
             }
             document.getElementById('res1X').className = "text-4xl font-mono font-black text-red-500";
             document.getElementById('resM').className  = "text-4xl font-mono font-black text-red-500";
-            document.getElementById('resP').innerText  = miseP_Eur.toFixed(2);
-            document.getElementById('labelPin').innerText = '3. MISE PINNACLE (€)';
+            // Affichage de la mise de CIBLE — en euros pour Pinnacle (sa vraie devise), en CFA
+            // sinon (comme n'importe quel soft), même principe que la boîte "Pinnacle" du flux
+            // normal (voir création de l'opération PARI plus haut).
+            if (bkCible === 'pinnacle') {
+                document.getElementById('resP').innerText = miseP_Eur.toFixed(2);
+                document.getElementById('labelPin').innerText = '3. MISE PINNACLE (€)';
+            } else {
+                document.getElementById('resP').innerText = Math.round(miseP_Cfa).toLocaleString('fr-FR');
+                document.getElementById('labelPin').innerText = `3. MISE ${bkCible === '1xbet' ? '1XBET' : '1WIN'} (CFA)`;
+            }
             document.getElementById('boxPin').classList.remove('locked-pin');
             document.getElementById('coteSecu').innerText = "MODE : SAUVETAGE";
             document.getElementById('resProfit').innerText   = profitSauv.toLocaleString() + " CFA";
             document.getElementById('resProfit').className   = "text-4xl font-black " + (profitSauv >= 0 ? "text-emerald-400" : "text-red-400");
             // "wait" par défaut, comme tout autre type d'opération : le vrai gagnant (soft ou
-            // Pinnacle) n'est connu qu'à la fin du match. Défaut sur "sauv" forcerait à tort
-            // un résultat "Pinnacle gagnant" si l'utilisateur validait avant la fin du match.
+            // cible) n'est connu qu'à la fin du match. Défaut sur "sauv" forcerait à tort un
+            // résultat "cible gagnante" si l'utilisateur validait avant la fin du match.
             document.getElementById('gagnant').value = "wait";
 
             const heureSysteme = new Date().getHours();
             const sauvMode = 'SAUVETAGE-' + sauvSoftId.toUpperCase();
 
             // Les mises soft sont déjà déduites lors de l'opération initiale —
-            // seule la nouvelle mise Pinnacle de sauvetage est déduite ci-dessous.
+            // seule la nouvelle mise de sauvetage (cible) est déduite ci-dessous.
 
             // Conserve le contexte du signal (sport/match/ligue/marché) de l'opération
             // d'origine qu'on est en train de sauver — c'est le même match, il n'y a aucune
             // raison qu'un abonné perde ce contexte juste parce qu'un sauvetage est déclenché.
             const contexteOrigine = { alSport: op?.alSport || null, alMatch: op?.alMatch || null, alLigue: op?.alLigue || null, alMarche: op?.alMarche || null };
-            op = {type:'SAUVETAGE', issues:2, heure:heureSysteme, miseS:mS_total, m1X:m1X_sauv, mM:mM_sauv, miseP_Eur:miseP_Eur.toFixed(2), miseP_Cfa:miseP_Cfa, os:cSauvOrigine, opn:cP, pCfa:profitSauv, pPct:0, softId:sauvMode, fullDate:new Date().toLocaleDateString('fr-FR'), ...contexteOrigine};
+            // sauvBkCible (nouveau champ) est LA source de vérité pour savoir vers quel
+            // bookmaker ce sauvetage est dirigé — utilisée par le message Telegram, le lien
+            // calculatrice et la résolution finale (crédit du bon wallet).
+            op = {type:'SAUVETAGE', issues:2, heure:heureSysteme, miseS:mS_total, m1X:m1X_sauv, mM:mM_sauv, miseP_Eur:miseP_Eur.toFixed(2), miseP_Cfa:miseP_Cfa, os:cSauvOrigine, opn:cP, pCfa:profitSauv, pPct:0, softId:sauvMode, sauvBkCible:bkCible, softsUtilises: bkCible==='pinnacle' ? [sauvSoftId] : [sauvSoftId, bkCible], fullDate:new Date().toLocaleDateString('fr-FR'), ...contexteOrigine};
             copiesSoftEffectuees = 0;
             // "GAGNANT SOFT" n'est un choix fiable que si on connaît la vraie cote d'origine du soft.
             // Sinon on le masque pour empêcher un calcul de profit erroné.
             const optSoftSauv = document.querySelector('#gagnant option[value="s"]');
             if(optSoftSauv) optSoftSauv.classList.toggle('hidden', cSauvOrigine <= 1);
-            // Déduire uniquement la nouvelle mise Pinnacle de sauvetage
-            bP -= miseP_Cfa;
+            reinitialiserLabelsGagnant();
+            // Déduire uniquement la nouvelle mise de sauvetage, dans le BON wallet cible.
+            if (bkCible === '1xbet') b1X -= miseP_Cfa;
+            else if (bkCible === '1win') bM -= miseP_Cfa;
+            else bP -= miseP_Cfa;
 
             // Diffusion Telegram — un sauvetage est aussi une opération en cours pour la communauté
             diffuserOperationTelegram(op);
@@ -3203,7 +3324,7 @@
         }
 
         window.onload = () => {
-            charger(); rafraichir(); chargerTaux(); verifierResetQuotidien(); updateGoalDisplay(); actualiserMiseAuto(); initialiserGraphiques();
+            charger(); rafraichir(); chargerTaux(); verifierResetQuotidien(); updateGoalDisplay(); actualiserMiseAuto(); initialiserGraphiques(); majBoutonsBkFixe(); majBoutonsSauvBkCible();
             // Vérifie le changement de jour toutes les minutes, pour le cas où l'app reste
             // ouverte en continu et passe minuit sans rechargement de page.
             setInterval(verifierResetQuotidien, 60000);
@@ -3344,8 +3465,8 @@
                             }).join('')}
                            </div>`
                         : `<div class="flex gap-2 justify-end">
-                            <button onclick="resolvPending(${index}, 's')" class="bg-blue-600/20 text-blue-400 px-2 py-1 rounded text-[8px] font-black border border-blue-500/30">SOFT</button>
-                            <button onclick="resolvPending(${index}, 'p')" class="bg-red-600/20 text-red-400 px-2 py-1 rounded text-[8px] font-black border border-red-500/30">PIN</button>
+                            <button onclick="resolvPending(${index}, 's')" class="bg-blue-600/20 text-blue-400 px-2 py-1 rounded text-[8px] font-black border border-blue-500/30">${(h.softId==='1xbet'?'1XBET':h.softId==='1win'?'1WIN':'SOFT')}</button>
+                            <button onclick="resolvPending(${index}, 'p')" class="bg-red-600/20 text-red-400 px-2 py-1 rounded text-[8px] font-black border border-red-500/30">${((h.bk2||'pinnacle')==='1xbet'?'1XBET':(h.bk2||'pinnacle')==='1win'?'1WIN':'PIN')}</button>
                            </div>`)
                     : h.type === 'SAUVETAGE'
                         ? `<span class="text-red-400 mr-2">[SAUVETAGE]</span> <span class="font-black text-white">${h.pCfa.toLocaleString()}</span>`
@@ -3359,7 +3480,7 @@
                               })()
                             : h.winner==='n'
                                 ? `<span class="text-purple-400 mr-2">[3ÈME/${(h.soft3||'--').toUpperCase()}]</span> <span class="font-black text-white">${(h.pCfa||0).toLocaleString()}</span>`
-                                : `<span class="${h.winner==='s'?'text-blue-500':'text-red-500'} mr-2">[${h.winner==='s'?'SOFT':'PIN'}]</span> <span class="font-black text-white">${(h.pCfa||0).toLocaleString()}</span>`;
+                                : `<span class="${h.winner==='s'?'text-blue-500':'text-red-500'} mr-2">[${(nomCampGagnant(h)||(h.winner==='s'?'SOFT':'PIN')).toUpperCase()}]</span> <span class="font-black text-white">${(h.pCfa||0).toLocaleString()}</span>`;
                 const modeColor = h.type==='SAUVETAGE'?'text-red-400':h.issues===3?'text-purple-400':'text-slate-300';
                 const issuesBadge = h.issues===3 ? '<span class="text-purple-400 text-[7px]"> [3I]</span>' : '';
                 const aAlerte = !!h.alMatch;
@@ -3373,7 +3494,7 @@
                 const rowClass = `log-row italic ${h.status === 'PENDING' ? 'opacity-60 bg-white/5' : ''} ${aDetail ? 'cursor-pointer hover:bg-white/5' : ''}`;
                 const rowClick = aDetail ? `onclick="toggleAlertDetail(${index})"` : '';
                 const boutonEdit = `<button onclick="event.stopPropagation(); ouvrirEditionOperation(${index})" class="text-slate-500 hover:text-emerald-400 ml-2" title="Éditer cette opération">✏️</button>`;
-                const ligneP = `<tr class="${rowClass}" ${rowClick}><td class="py-4 text-slate-500">${h.fullDate}${alerteBadge}</td><td class="py-4 uppercase font-black ${modeColor}">${h.softId}${issuesBadge}</td><td class="text-center font-bold text-blue-400">${h.m1X || '-'}</td><td class="text-center font-bold text-blue-600">${h.mM || '-'}</td><td class="text-center">S:${h.os}/P:${h.opn}</td><td class="text-center font-bold text-red-400">${h.miseP_Eur}€</td><td class="text-right text-emerald-500 font-black">${h.pPct}%</td><td class="text-right font-black">${statusCell}${boutonEdit}</td></tr>`;
+                const ligneP = `<tr class="${rowClass}" ${rowClick}><td class="py-4 text-slate-500">${h.fullDate}${alerteBadge}</td><td class="py-4 uppercase font-black ${modeColor}">${h.softId}${issuesBadge}</td><td class="text-center font-bold text-blue-400">${h.m1X || '-'}</td><td class="text-center font-bold text-blue-600">${h.mM || '-'}</td><td class="text-center">S:${h.os}/P:${h.opn}</td><td class="text-center font-bold text-red-400">${(h.bk2||'pinnacle')==='pinnacle' ? (h.miseP_Eur||0)+'€' : (h.miseP_Cfa||0).toLocaleString('fr-FR')+' CFA'}</td><td class="text-right text-emerald-500 font-black">${h.pPct}%</td><td class="text-right font-black">${statusCell}${boutonEdit}</td></tr>`;
                 const ligneDetail = aDetail ? `<tr id="detail-${index}" class="hidden bg-black/30 not-italic"><td colspan="8" class="p-4 text-[9px] text-slate-400 space-y-1 leading-relaxed">
                         ${aAlerte ? `<p><span class="text-emerald-500 font-black uppercase">${escapeHtml(h.alSport) || '--'}</span> · ${escapeHtml(h.alDateHeure) || '--'} · Edge annoncé BreakingBet : <span class="text-amber-400 font-black">${h.alEdgePct ? h.alEdgePct + '%' : '--'}</span></p>
                         <p>Match : <span class="text-white font-bold">${escapeHtml(h.alMatch) || '--'}</span> — <span class="text-slate-500">${escapeHtml(h.alLigue) || '--'}</span></p>
@@ -3591,24 +3712,43 @@
         }
 
         // Nombre d'opérations déjà lancées AUJOURD'HUI sur un soft donné ('1xbet'|'1win').
-        function nbUtilisationsSoftAujourdHui(id) {
-            const aujourdHui = new Date().toLocaleDateString('fr-FR');
-            return hist.filter(h => h.fullDate === aujourdHui && (h.softId || '').toLowerCase() === id).length;
-        }
-
-        // Repère visuel de répartition quotidienne — jamais un blocage : le soft n'est pas un
-        // choix libre de l'opérateur, c'est l'alerte elle-même qui dicte lequel est
-        // disponible (1xBet ou 1Win selon ce que BreakingBet a détecté). Bloquer la sélection
-        // empêcherait de lancer une alerte parfaitement valide si elle n'utilise justement que
-        // le soft déjà utilisé aujourd'hui — aucune alternative possible dans ce cas, l'alerte
-        // n'en propose qu'un seul. Le signal reste visible (bouton grisé, message), mais ne
-        // gêne jamais une opération réelle.
+        // Note : la règle "un soft (1xbet/1win) ne peut être utilisé qu'une seule fois par
+        // jour" a été retirée intégralement, à la demande explicite de l'utilisateur — les
+        // arbitrages entre les deux softs (1xBet vs 1Win) sont désormais un type d'opération
+        // à part entière (voir bkFixe), rendant cette limite obsolète. Aucun contrôle,
+        // blocage ni indicateur de répartition quotidienne ne subsiste.
         function selectSoft(id) {
             softSelected = id;
             document.querySelectorAll('.btn-soft').forEach(b => b.classList.remove('active'));
             document.getElementById('btn-'+id).classList.add('active');
+            // Si le côté fixe (droite) pointait justement sur CE soft (cas "arb entre softs"),
+            // le faire basculer automatiquement sur l'autre soft disponible plutôt que de
+            // laisser les deux côtés pointer sur le même bookmaker, ce qui n'aurait aucun sens.
+            if (bkFixe === id) bkFixe = id === '1xbet' ? '1win' : '1xbet';
+            majBoutonsBkFixe();
             validerProfitMin();
             document.getElementById('coteS').focus();
+        }
+
+        // Met à jour le libellé et l'état actif des 2 boutons du côté fixe (droite) — le nom
+        // de "l'autre soft" dépend de ce qui est choisi à gauche (softSelected), donc ce
+        // libellé doit se rafraîchir à chaque changement de côté, pas seulement au clic sur
+        // le bouton du côté fixe lui-même.
+        function majBoutonsBkFixe() {
+            const btnPin = document.getElementById('btnBkFixePin');
+            const btnAutre = document.getElementById('btnBkFixeAutre');
+            if (!btnPin || !btnAutre) return;
+            const autreSoft = softSelected === '1xbet' ? '1win' : '1xbet';
+            btnAutre.textContent = autreSoft === '1xbet' ? '1xBet' : '1Win';
+            btnPin.classList.toggle('active', bkFixe === 'pinnacle');
+            btnAutre.classList.toggle('active', bkFixe !== 'pinnacle');
+        }
+
+        function selectBkFixe(mode) {
+            bkFixe = mode === 'autre' ? (softSelected === '1xbet' ? '1win' : '1xbet') : 'pinnacle';
+            majBoutonsBkFixe();
+            majLabelsMinBookmaker();
+            validerProfitMin();
         }
 
         // Réétiquette dynamiquement les 3 options du menu "Gagnant" en mode 3 issues flexible,
@@ -3628,8 +3768,10 @@
             const optS = document.querySelector('#gagnant option[value="s"]');
             const optP = document.querySelector('#gagnant option[value="p"]');
             const optN = document.getElementById('optionN');
-            if(optS) optS.innerText = '✅ GAGNANT SOFT';
-            if(optP) optP.innerText = '✅ GAGNANT PINNACLE';
+            if(optS) optS.innerText = `✅ GAGNANT ${(softSelected === '1xbet' ? '1XBET' : softSelected === '1win' ? '1WIN' : 'SOFT')}`;
+            // Label dynamique selon bkFixe — "GAGNANT PINNACLE" par défaut, ou le nom de
+            // l'autre soft pour un arb 100% entre softs (1xBet vs 1Win).
+            if(optP) optP.innerText = `✅ GAGNANT ${bkFixe === '1xbet' ? '1XBET' : bkFixe === '1win' ? '1WIN' : 'PINNACLE'}`;
             if(optN) optN.innerText = '✅ GAGNANT CÔTÉ 3';
         }
 
@@ -3687,17 +3829,29 @@
                 const cp = lireCote('coteP');
                 const arb = (1/cs) + (1/cp);
                 let mS_Tot = Math.round(((t/arb)/cs)/PAS_ARRONDI_CFA)*PAS_ARRONDI_CFA;
-                let mPE    = parseFloat(((t/arb)/cp/tx).toFixed(2));
-                let mPC    = mPE * tx;
-                // Cote de seuil (breakeven) côté Pinnacle : au-dessous, l'opération devient perdante.
+                // mPE/mPC = mise du côté FIXE (droite), en équivalent CFA dans tous les cas —
+                // mPE (euros) n'a de sens QUE quand bkFixe==='pinnacle' (sa vraie devise) ;
+                // pour un arb 100% entre softs, seul mPC (CFA, même arrondi que mS_Tot) compte.
+                let mPE = 0, mPC = 0;
+                if (bkFixe === 'pinnacle') {
+                    mPE = parseFloat(((t/arb)/cp/tx).toFixed(2));
+                    mPC = mPE * tx;
+                } else {
+                    mPC = Math.round(((t/arb)/cp)/PAS_ARRONDI_CFA)*PAS_ARRONDI_CFA;
+                }
+                // Cote de seuil (breakeven) côté fixe : au-dessous, l'opération devient perdante.
                 const coteMinPin = ((mS_Tot + mPC) / mPC).toFixed(3);
                 document.getElementById('coteSecu').innerText = `MIN : ${coteMinPin}`;
                 const optSoftStd = document.querySelector('#gagnant option[value="s"]');
                 if(optSoftStd) optSoftStd.classList.remove('hidden');
                 reinitialiserLabelsGagnant();
+                // m1X/mM couvrent maintenant DEUX rôles possibles chacun : la mise softSelected
+                // (gauche) OU la mise bkFixe (droite) quand ce dernier est justement CET autre
+                // soft — jamais les deux à la fois sur le même wallet, puisque softSelected et
+                // bkFixe pointent toujours vers deux bookmakers distincts (voir selectSoft).
                 let m1X = 0, mM = 0;
-                m1X = softSelected==='1xbet' ? mS_Tot : 0;
-                mM  = softSelected==='1win'  ? mS_Tot : 0;
+                m1X = softSelected==='1xbet' ? mS_Tot : (bkFixe==='1xbet' ? mPC : 0);
+                mM  = softSelected==='1win'  ? mS_Tot : (bkFixe==='1win'  ? mPC : 0);
 
                 document.getElementById('zoneExec').classList.remove('hidden');
                 document.getElementById('res1X').innerText = m1X.toLocaleString();
@@ -3710,10 +3864,21 @@
                 document.getElementById('resN').style.lineHeight = '';
                 document.getElementById('resN').className = "text-4xl font-mono font-black text-purple-400";
                 document.getElementById('labelN').innerText = '3. MISE NUL';
-                document.getElementById('labelPin').innerText = '3. MISE PINNACLE (€)';
-                document.getElementById('resP').innerText = mPE.toFixed(2);
+                // Boîte "Pinnacle" toujours affichée (comme en 3 issues) : soit la vraie mise
+                // Pinnacle si bkFixe l'utilise, soit "PINNACLE NON UTILISÉ" pour un arb 100%
+                // entre softs — même convention déjà établie en 3 issues (voir plus bas),
+                // jamais besoin d'inventer un nouvel état d'affichage.
+                if (bkFixe === 'pinnacle') {
+                    document.getElementById('labelPin').innerText = '3. MISE PINNACLE (€)';
+                    document.getElementById('resP').innerText = mPE.toFixed(2);
+                } else {
+                    document.getElementById('labelPin').innerText = 'PINNACLE NON UTILISÉ';
+                    document.getElementById('resP').innerText = '0.00';
+                }
 
-                const profitRealise = Math.floor(Math.min(mS_Tot*cs, mPE*tx*cp)-(mS_Tot+(mPE*tx)) + 1e-6);
+                // Généralisé sur mPC (équivalent CFA du côté fixe, valable quel que soit le
+                // bookmaker) plutôt que sur "mPE*tx" qui ne voulait rien dire hors Pinnacle.
+                const profitRealise = Math.floor(Math.min(mS_Tot*cs, mPC*cp)-(mS_Tot+mPC) + 1e-6);
                 document.getElementById('resProfit').innerText = profitRealise.toLocaleString() + " CFA";
                 document.getElementById('boxPin').classList.add('locked-pin');
                 document.getElementById('res1X').className = "text-4xl font-mono font-black text-white";
@@ -3726,9 +3891,15 @@
                     ? "mt-1 px-3 py-1 rounded-full text-[8px] font-black uppercase italic border border-red-500 bg-red-500/10 text-red-400 animate-pulse"
                     : "mt-1 px-3 py-1 rounded-full text-[8px] font-black uppercase italic border border-emerald-500 bg-emerald-500/10 text-emerald-400";
 
-                op = {type:'PARI', issues:2, heure:heureSysteme, miseS:mS_Tot, m1X, mM, mN:0, bk1:'soft', bk2:'pinnacle', bk3:null, miseP_Eur:mPE, miseP_Cfa:mPC, os:cs, opn:cp, oN:0, pCfa:0, pPct:'--', softId:softSelected, fluxType:typeFluxDetecte, fullDate:new Date().toLocaleDateString('fr-FR')};
+                // bk2 = bkFixe (Pinnacle par défaut, ou l'autre soft pour un arb 100% entre
+                // softs) — c'est désormais LA source de vérité pour savoir quel bookmaker est
+                // réellement côté "droite" partout en aval (message Telegram, lien
+                // calculatrice, crédit du bon wallet à la résolution). softsUtilises inclut
+                // les DEUX softs quand bkFixe en est un, pour que l'historique reflète
+                // fidèlement les comptes réellement engagés.
+                op = {type:'PARI', issues:2, heure:heureSysteme, miseS:mS_Tot, m1X, mM, mN:0, bk1:'soft', bk2:bkFixe, bk3:null, miseP_Eur:mPE, miseP_Cfa:mPC, os:cs, opn:cp, oN:0, pCfa:0, pPct:'--', softId:softSelected, softsUtilises:bkFixe==='pinnacle' ? [softSelected] : [softSelected, bkFixe], fluxType:typeFluxDetecte, fullDate:new Date().toLocaleDateString('fr-FR')};
                 copiesSoftEffectuees = 0;
-                b1X -= m1X; bM -= mM; bP -= mPC;
+                b1X -= m1X; bM -= mM; bP -= (bkFixe === 'pinnacle' ? mPC : 0);
 
             } else {
                 // ── MODE 3 ISSUES — ENTIÈREMENT FLEXIBLE ──────────────
@@ -3838,6 +4009,14 @@
                     os:c1, opn:c2, oN:c3,
                     pCfa:0, pPct:'--',
                     softId: `3I(${bkSel[1]?.substring(0,3)||'?'}/${bkSel[2]?.substring(0,3)||'?'}/${bkSel[3]?.substring(0,3)||'?'})`,
+                    // Liste normalisée des softs réellement engagés (Pinnacle exclu, pas de
+                    // limite quotidienne pour lui) — voir nbUtilisationsSoftAujourdHui : sans
+                    // ce champ, le format composite "3I(...)" ci-dessus ne correspondait
+                    // JAMAIS à une comparaison stricte "1xbet"/"1win", et cette opération à 3
+                    // issues restait invisible pour la règle anti-détection "1 usage par soft
+                    // par jour" — un doublon d'usage du même soft plus tard dans la journée
+                    // n'était alors jamais bloqué.
+                    softsUtilises: [bkSel[1], bkSel[2], bkSel[3]].filter(bk => bk === '1xbet' || bk === '1win'),
                     fluxType:'3issues', fullDate:new Date().toLocaleDateString('fr-FR')
                 };
                 copiesSoftEffectuees = 0;
@@ -3894,7 +4073,10 @@
                     });
                 } else {
                     const blocSoft = alerteMeta.blocs.find(b => detecterRoleBookmaker(b.bookmaker) === op.softId);
-                    const blocPin = alerteMeta.blocs.find(b => detecterRoleBookmaker(b.bookmaker) === 'pinnacle');
+                    // op.bk2 généralisé (Pinnacle par défaut) — sans ça, le marché "Parier sur"
+                    // du côté droit restait toujours introuvable pour un arb 100% entre softs,
+                    // puisque cette recherche ne cherchait QUE le rôle 'pinnacle'.
+                    const blocPin = alerteMeta.blocs.find(b => detecterRoleBookmaker(b.bookmaker) === (op.bk2 || 'pinnacle'));
                     op.descS = blocSoft ? traduireMarche(blocSoft.marche, blocSoft.match) : null;
                     op.marcheCodeS = blocSoft ? blocSoft.marche : null;
                     op.descP = blocPin ? traduireMarche(blocPin.marche, blocPin.match) : null;
@@ -3925,14 +4107,22 @@
                 document.getElementById('boxPin').classList.remove('locked-pin');
             }
         }
-        function copierMontant(t) { if(t === 'pin') { navigator.clipboard.writeText(op.miseP_Eur); document.getElementById('boxPin').classList.add('success-copy'); } }
+        function copierMontant(t) { if(t === 'pin') { navigator.clipboard.writeText((op.bk2||'pinnacle')==='pinnacle' ? op.miseP_Eur : op.miseP_Cfa); document.getElementById('boxPin').classList.add('success-copy'); } }
         
         function cloturerCycle() { 
             if(!op) return; 
             const choice = document.getElementById('gagnant').value;
             const totalEngage = (op.issues===3 && op.sides3)
                 ? op.sides3.reduce((s, x) => s + (x.cfa||0), 0)
-                : (op.m1X||0) + (op.mM||0) + (op.miseP_Cfa||0);
+                // miseP_Cfa n'est à ADDITIONNER que si le côté droit est Pinnacle POUR UN
+                // 'PARI' — pour un arb 100% entre softs, cette mise est déjà comptée dans m1X
+                // ou mM (voir la création de l'opération), l'additionner en plus la compterait
+                // deux fois. Pour un 'SAUVETAGE', op.bk2 n'est jamais renseigné (seul
+                // op.sauvBkCible l'est) : la condition retombe donc toujours sur son repli
+                // 'pinnacle' et ADDITIONNE systématiquement miseP_Cfa — ce qui est le bon
+                // comportement ici, car m1X/mM d'un sauvetage ne contiennent QUE la mise
+                // d'ORIGINE déjà placée, jamais la mise de la cible, quelle qu'elle soit.
+                : (op.m1X||0) + (op.mM||0) + ((op.bk2||'pinnacle')==='pinnacle' ? (op.miseP_Cfa||0) : 0);
             if(choice === 'wait') { 
                 op.status = 'PENDING'; 
             } else { 
@@ -3944,12 +4134,29 @@
                     if(side.bk==='1xbet')         b1X += retour;
                     else if(side.bk==='1win')   bM  += retour;
                     else if(side.bk==='pinnacle') bP  += retour;
-                } else if(choice === 's') { 
-                    retour = (op.m1X * op.os) + (op.mM * op.os);
-                    b1X += (op.m1X * op.os); bM += (op.mM * op.os); 
-                } else if(choice === 'p' || choice === 'sauv') { 
+                } else if(choice === 's') {
+                    // Origine dérivée de op.softId lui-même (pas de la variable globale
+                    // softSelected, qui peut avoir changé depuis — ex. l'utilisateur a
+                    // sélectionné un autre soft ailleurs dans l'app avant de clôturer cette
+                    // opération précise) — fonctionne pour 'PARI' ('1xbet'/'1win' déjà nus) et
+                    // 'SAUVETAGE' ('SAUVETAGE-1XBET' préfixé, retiré ici). Seul le wallet
+                    // correspondant est crédité, avec SA cote (op.os) — jamais l'autre wallet
+                    // (bkFixe, quand c'est aussi un soft), qui a sa PROPRE cote (op.opn) et se
+                    // règle dans la branche 'p'/'sauv'. Bug réel constaté sans cette
+                    // distinction : l'ancien code créditait m1X ET mM avec la MÊME cote op.os,
+                    // ce qui n'avait de sens que tant que l'autre côté était toujours Pinnacle.
+                    const origineSoft = (op.softId || '').replace('SAUVETAGE-', '').toLowerCase();
+                    const miseOrigine = origineSoft === '1xbet' ? op.m1X : op.mM;
+                    retour = miseOrigine * op.os;
+                    if (origineSoft === '1xbet') b1X += retour; else bM += retour;
+                } else if(choice === 'p' || choice === 'sauv') {
                     retour = op.miseP_Cfa * op.opn;
-                    bP += retour; 
+                    // bk2 (opération normale) ou sauvBkCible (sauvetage) généralisés — Pinnacle
+                    // par défaut si absent (anciennes opérations enregistrées avant ces champs).
+                    const bkDroit = op.type === 'SAUVETAGE' ? (op.sauvBkCible || 'pinnacle') : (op.bk2 || 'pinnacle');
+                    if (bkDroit === '1xbet') b1X += retour;
+                    else if (bkDroit === '1win') bM += retour;
+                    else bP += retour;
                 }
                 // NB : pour un pari 3 issues, op.sides3 est toujours défini et la branche
                 // ci-dessus intercepte déjà 'n' (idx=2) — l'ancienne branche basée sur
@@ -4107,7 +4314,14 @@
             if(issuesMode === 2) {
                 const arb = (1/cs) + (1/cp);
                 let mS = Math.round(((t/arb)/cs)/PAS_ARRONDI_CFA)*PAS_ARRONDI_CFA;
-                let mPC = parseFloat(((t/arb)/cp/tx).toFixed(2)) * tx;
+                // mPC = mise sur le côté fixe (droite), toujours en équivalent CFA en interne,
+                // mais arrondie différemment selon le VRAI bookmaker : à 2 décimales en EUROS
+                // pour Pinnacle (sa devise réelle de dépôt), au même pas CFA qu'un soft sinon
+                // — cohérent avec le fait qu'un arb 100% entre softs (1xBet vs 1Win) ne doit
+                // jamais transiter par une conversion EUR qui n'a pas lieu d'être ici.
+                let mPC = bkFixe === 'pinnacle'
+                    ? parseFloat(((t/arb)/cp/tx).toFixed(2)) * tx
+                    : Math.round(((t/arb)/cp)/PAS_ARRONDI_CFA)*PAS_ARRONDI_CFA;
                 let pR = Math.floor(Math.min(mS*cs, mPC*cp) - (mS+mPC) + 1e-6);
                 let pP = (pR/(mS+mPC))*100;
                 const vraieSurebet = arb < 1 && pR > 0;
@@ -4121,7 +4335,9 @@
                 // SUREBET (ARB ≥ 1)" alors que l'arb valait 0.983 — l'edge existait bel et bien.
                 const edgeMangeParArrondi = arb < 1 && pR <= 0;
                 const balSoft = softSelected === '1xbet' ? b1X : softSelected === '1win' ? bM : 0;
-                const fondsInsuffisants = mS > balSoft || mPC > bP;
+                // Solde du côté fixe — même mapping que balSoft, avec Pinnacle en plus.
+                const balFixe = bkFixe === 'pinnacle' ? bP : bkFixe === '1xbet' ? b1X : bkFixe === '1win' ? bM : 0;
+                const fondsInsuffisants = mS > balSoft || mPC > balFixe;
                 // Affichage permanent "Besoin / Solde" sous chaque cote — en vrai badge visible
                 // (pas juste une légende grise), pour que le manque saute aux yeux avant même
                 // de cliquer "Lancer" plutôt que de découvrir un message générique après coup.
@@ -4140,31 +4356,29 @@
                 }
                 const champBesoinPin = document.getElementById('besoinPin');
                 if (champBesoinPin) {
-                    const suffisantPin = mPC <= bP;
-                    // Affiché en EUROS, pas en CFA — Pinnacle est géré en interne via un
-                    // équivalent CFA pour rester cohérent avec les formules communes aux 3
-                    // bookmakers, mais c'est bien en euros que tu déposes et raisonnes chez
-                    // eux (même logique que le solde wallet et le label "min : 5 €" déjà en
-                    // euros juste au-dessus — les deux devaient rester cohérents entre eux).
+                    const suffisantPin = mPC <= balFixe;
                     champBesoinPin.className = 'inline-flex items-center gap-1 mt-1 px-2 py-1 rounded-lg text-[10px] font-black uppercase ' + (suffisantPin ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/15 text-red-400 border border-red-500/40 animate-pulse');
-                    champBesoinPin.innerHTML = suffisantPin
-                        ? `✓ ${(mPC/tx).toFixed(2)} / ${(bP/tx).toFixed(2)} €`
-                        : `⚠️ MANQUE ${((mPC-bP)/tx).toFixed(2)} €`;
+                    // Euros si Pinnacle (sa vraie devise de dépôt, cohérent avec le solde wallet
+                    // et le label "min : 5 €" juste au-dessus) — CFA sinon, comme n'importe quel
+                    // soft.
+                    champBesoinPin.innerHTML = bkFixe === 'pinnacle'
+                        ? (suffisantPin
+                            ? `✓ ${(mPC/tx).toFixed(2)} / ${(balFixe/tx).toFixed(2)} €`
+                            : `⚠️ MANQUE ${((mPC-balFixe)/tx).toFixed(2)} €`)
+                        : (suffisantPin
+                            ? `✓ ${Math.round(mPC).toLocaleString('fr-FR')} / ${Math.floor(balFixe).toLocaleString('fr-FR')} CFA`
+                            : `⚠️ MANQUE ${Math.ceil(mPC - balFixe).toLocaleString('fr-FR')} CFA`);
                 }
-                // Mise Pinnacle sous le minimum réel de la plateforme (5€) : le pari serait
-                // mathématiquement correct mais IMPOSSIBLE à placer chez eux — un capital
-                // engagé trop faible pour cet edge, distinct de "solde insuffisant".
-                const miseSousMinPinnacle = (mPC / tx) < MISE_MIN_PINNACLE_EUR;
-                // Même contrôle côté soft (1xBet/1Win) — même principe, seuil différent (CFA
-                // plutôt qu'EUR) et bookmaker déterminé par softSelected.
+                // Mise sous le minimum réel de la plateforme côté fixe (5€ Pinnacle, ou 500 CFA
+                // pour l'autre soft) : le pari serait mathématiquement correct mais IMPOSSIBLE à
+                // placer chez eux — généralisé symétriquement au contrôle côté soft juste
+                // en-dessous (minSoftInfo), au lieu d'un seuil Pinnacle câblé en dur.
+                const minFixeInfo = minPourBookmaker(bkFixe);
+                const valeurNativeFixe = bkFixe === 'pinnacle' ? mPC / tx : mPC;
+                const miseSousMinFixe = minFixeInfo && valeurNativeFixe < minFixeInfo.valeur;
                 const minSoftInfo = minPourBookmaker(softSelected);
                 const miseSousMinSoft = minSoftInfo && mS < minSoftInfo.valeur;
-                const miseSousMin = miseSousMinPinnacle || miseSousMinSoft;
-                // Un soft déjà utilisé aujourd'hui devient indisponible jusqu'au lendemain,
-                // même pour une toute nouvelle alerte qui le désigne à nouveau — discipline
-                // anti-détection assumée : une seule opération par soft par jour, sans
-                // exception ni contournement possible depuis le terminal.
-                const softDejaUtiliseAujourdHui = softSelected && nbUtilisationsSoftAujourdHui(softSelected) >= 1;
+                const miseSousMin = miseSousMinFixe || miseSousMinSoft;
                 // Edge théorique (cotes brutes, avant tout arrondi de mise) — sert de référence
                 // pour détecter quand l'arrondi mange une part importante du profit attendu.
                 const edgeTheorique = (1 - arb) * 100;
@@ -4173,7 +4387,7 @@
                 // ne déclenchait JAMAIS cet avertissement, laissant le message erroné "ARB ≥ 1"
                 // comme seule explication alors que la vraie cause est l'arrondi, pas les cotes.
                 afficherAvertissementArrondi(arb < 1 ? pP : null, edgeTheorique);
-                if(t>0 && softSelected && vraieSurebet && !fondsInsuffisants && !miseSousMin && !softDejaUtiliseAujourdHui) {
+                if(t>0 && softSelected && vraieSurebet && !fondsInsuffisants && !miseSousMin) {
                     btn.disabled=false; btn.className="w-full py-5 bg-emerald-600 text-white rounded-3xl font-black text-[11px] uppercase italic shadow-[0_0_15px_rgba(16,185,129,0.3)]"; btn.innerText="Lancer l'Analyse ("+pP.toFixed(1)+"%)";
                 } else {
                     btn.disabled=true; btn.className="w-full py-5 bg-red-900/20 text-red-500 rounded-3xl font-black text-[11px] uppercase cursor-not-allowed italic";
@@ -4184,10 +4398,12 @@
                     if (fondsInsuffisants) {
                         const manques = [];
                         if (mS > balSoft) manques.push(`${(softSelected||'').toUpperCase()} MANQUE ${Math.ceil(mS - balSoft).toLocaleString('fr-FR')} CFA`);
-                        if (mPC > bP) manques.push(`PINNACLE MANQUE ${((mPC - bP)/tx).toFixed(2)} €`);
+                        if (mPC > balFixe) manques.push(bkFixe === 'pinnacle'
+                            ? `PINNACLE MANQUE ${((mPC - balFixe)/tx).toFixed(2)} €`
+                            : `${bkFixe.toUpperCase()} MANQUE ${Math.ceil(mPC - balFixe).toLocaleString('fr-FR')} CFA`);
                         msgManque = "⛔ " + manques.join(' · ');
                     }
-                    btn.innerText = t>0&&softSelected&&vraieSurebet&&softDejaUtiliseAujourdHui ? `⛔ ${(softSelected||'').toUpperCase()} DÉJÀ UTILISÉ AUJOURD'HUI` : t>0&&softSelected&&vraieSurebet&&fondsInsuffisants ? msgManque : t>0&&softSelected&&vraieSurebet&&miseSousMinPinnacle ? "⛔ MISE PINNACLE SOUS LE MINIMUM (5€) — AUGMENTE LA MISE" : t>0&&softSelected&&vraieSurebet&&miseSousMinSoft ? `⛔ MISE ${minSoftInfo.label.toUpperCase().replace('MIN : ', '')} — AUGMENTE LA MISE` : t>0&&cs>0&&cp>0&&edgeMangeParArrondi ? "⚠️ EDGE MANGÉ PAR L'ARRONDI — AUGMENTE LA MISE" : t>0&&cs>0&&cp>0&&!vraieSurebet ? "PAS DE SUREBET (ARB ≥ 1)" : t>0 ? "SAISIE DES DONNÉES EN COURS" : "DÉFINIR CAPITAL DE RÉFÉRENCE";
+                    btn.innerText = t>0&&softSelected&&vraieSurebet&&fondsInsuffisants ? msgManque : t>0&&softSelected&&vraieSurebet&&miseSousMinFixe ? `⛔ MISE ${minFixeInfo.label.toUpperCase().replace('MIN : ', '')} — AUGMENTE LA MISE` : t>0&&softSelected&&vraieSurebet&&miseSousMinSoft ? `⛔ MISE ${minSoftInfo.label.toUpperCase().replace('MIN : ', '')} — AUGMENTE LA MISE` : t>0&&cs>0&&cp>0&&edgeMangeParArrondi ? "⚠️ EDGE MANGÉ PAR L'ARRONDI — AUGMENTE LA MISE" : t>0&&cs>0&&cp>0&&!vraieSurebet ? "PAS DE SUREBET (ARB ≥ 1)" : t>0 ? "SAISIE DES DONNÉES EN COURS" : "DÉFINIR CAPITAL DE RÉFÉRENCE";
                 }
             } else {
                 // 3 issues — lecture des 3 cotes et 3 bookmakers
@@ -4262,15 +4478,7 @@
                     const valeurNative = bkSel[n] === 'pinnacle' ? cfa / tx : cfa;
                     if (valeurNative < info.valeur) { sideSousMin = { n, info }; break; }
                 }
-                // Même règle qu'en 2 issues : un soft (1xBet/1Win) déjà utilisé aujourd'hui
-                // bloque le lancement, même pour un côté de cette opération à 3 issues.
-                let softDejaUtilise3I = null;
-                for (const n of [1, 2, 3]) {
-                    const bk = bkSel[n];
-                    if ((bk === '1xbet' || bk === '1win') && nbUtilisationsSoftAujourdHui(bk) >= 1) { softDejaUtilise3I = bk; break; }
-                }
-
-                if(t>0 && vraieSurebet && !fondsInsuffisants3I && !sideSousMin && !softDejaUtilise3I) {
+                if(t>0 && vraieSurebet && !fondsInsuffisants3I && !sideSousMin) {
                     btn.disabled=false; btn.className="w-full py-5 bg-purple-600 text-white rounded-3xl font-black text-[11px] uppercase italic shadow-[0_0_15px_rgba(168,85,247,0.3)]"; btn.innerText="Lancer 3 Issues ("+pP.toFixed(1)+"%)";
                 } else {
                     btn.disabled=true; btn.className="w-full py-5 bg-red-900/20 text-red-500 rounded-3xl font-black text-[11px] uppercase cursor-not-allowed italic";
@@ -4282,7 +4490,7 @@
                         if (besoinP > bP) manques.push(`PINNACLE MANQUE ${((besoinP - bP)/tx).toFixed(2)} €`);
                         msgManque3I = "⛔ " + manques.join(' · ');
                     }
-                    btn.innerText = t>0&&vraieSurebet&&softDejaUtilise3I ? `⛔ ${softDejaUtilise3I.toUpperCase()} DÉJÀ UTILISÉ AUJOURD'HUI` : t>0&&vraieSurebet&&fondsInsuffisants3I ? msgManque3I : t>0&&vraieSurebet&&sideSousMin ? `⛔ CÔTÉ ${sideSousMin.n} SOUS LE ${sideSousMin.info.label.toUpperCase().replace('MIN : ', 'MINIMUM ')} — AUGMENTE LA MISE` : t>0&&edgeMangeParArrondi3I ? "⚠️ EDGE MANGÉ PAR L'ARRONDI — AUGMENTE LA MISE" : t>0&&!vraieSurebet ? "PAS DE SUREBET (ARB ≥ 1)" : "DÉFINIR CAPITAL DE RÉFÉRENCE";
+                    btn.innerText = t>0&&vraieSurebet&&fondsInsuffisants3I ? msgManque3I : t>0&&vraieSurebet&&sideSousMin ? `⛔ CÔTÉ ${sideSousMin.n} SOUS LE ${sideSousMin.info.label.toUpperCase().replace('MIN : ', 'MINIMUM ')} — AUGMENTE LA MISE` : t>0&&edgeMangeParArrondi3I ? "⚠️ EDGE MANGÉ PAR L'ARRONDI — AUGMENTE LA MISE" : t>0&&!vraieSurebet ? "PAS DE SUREBET (ARB ≥ 1)" : "DÉFINIR CAPITAL DE RÉFÉRENCE";
                 }
             }
         }
@@ -4315,9 +4523,24 @@
             }
             validerProfitMin();
         }
+        // Restitue les fonds réservés à l'annulation (expiration ou manuelle) — généralisé :
+        // pour un 'PARI', op.m1X/op.mM contiennent DÉJÀ la mise du côté fixe (bkFixe) quand
+        // c'est un soft (voir création de l'opération), donc rien à ajouter en plus pour
+        // Pinnacle dans ce cas — l'ajouter aurait fabriqué de l'argent fictif sur un wallet
+        // jamais débité. Pour un 'SAUVETAGE', c'est l'inverse : m1X/mM ne contiennent QUE la
+        // mise d'ORIGINE (jamais celle de la cible), donc la mise de cible doit TOUJOURS être
+        // restituée en plus, dans le bon wallet (sauvBkCible). Bug réel constaté sans cette
+        // distinction : annuler un arb 100% entre softs créditait Pinnacle de la mise du
+        // second soft, sans jamais la retirer du vrai wallet débité.
+        function restituerFondsAnnulation(op) {
+            const bkCible = op.type === 'SAUVETAGE' ? (op.sauvBkCible || 'pinnacle') : (op.bk2 || 'pinnacle');
+            b1X += (op.m1X||0) + (op.type === 'SAUVETAGE' && bkCible === '1xbet' ? (op.miseP_Cfa||0) : 0);
+            bM  += (op.mM||0)  + (op.type === 'SAUVETAGE' && bkCible === '1win'  ? (op.miseP_Cfa||0) : 0);
+            bP  += (bkCible === 'pinnacle' ? (op.miseP_Cfa||0) : 0);
+        }
         function annulerOperationExpired() {
             if(!op) return;
-            b1X += op.m1X||0; bM += op.mM||0; bP += op.miseP_Cfa||0;
+            restituerFondsAnnulation(op);
             op = null; opDeadline = null; copiesSoftEffectuees = 0;
             document.getElementById('zoneExec').classList.add('hidden');
             document.getElementById('divN').classList.add('hidden');
@@ -4339,7 +4562,7 @@
             if(!op) return;
             if(!(await confirmerPersonnalise("Annuler cette opération en cours ? Les fonds réservés seront restitués aux wallets."))) return;
             clearInterval(timerInterval);
-            b1X += op.m1X||0; bM += op.mM||0; bP += op.miseP_Cfa||0;
+            restituerFondsAnnulation(op);
             op = null; opDeadline = null; copiesSoftEffectuees = 0;
             document.getElementById('zoneExec').classList.add('hidden');
             document.getElementById('divN').classList.add('hidden');
@@ -4408,11 +4631,23 @@
                 document.getElementById('divM').style.display  = softId==='1win'  ? 'block' : 'none';
                 document.getElementById('res1X').innerText = (op.m1X||0).toLocaleString();
                 document.getElementById('resM').innerText  = (op.mM||0).toLocaleString();
-                document.getElementById('resP').innerText  = op.miseP_Eur;
+                // Cible généralisée (op.sauvBkCible) — même principe qu'à la création du
+                // sauvetage (calculerSauvetage) : euros si Pinnacle, CFA sinon. Bug réel
+                // constaté sans cette distinction : restaurer après rechargement un sauvetage
+                // vers l'autre soft affichait "0.00" à la place du vrai montant CFA engagé
+                // (miseP_Eur reste vide/nul quand la cible n'est pas Pinnacle).
+                const cibleSauvEstPin = (op.sauvBkCible || 'pinnacle') === 'pinnacle';
+                document.getElementById('resP').innerText = cibleSauvEstPin ? op.miseP_Eur : Math.round(op.miseP_Cfa||0).toLocaleString('fr-FR');
+                document.getElementById('labelPin').innerText = cibleSauvEstPin ? '3. MISE PINNACLE (€)' : `3. MISE ${(op.sauvBkCible||'').toUpperCase()} (CFA)`;
+                // Resynchronise le toggle de cible avec l'opération restaurée — sans ça, le
+                // toggle resterait sur sa valeur par défaut ('pinnacle') après un rechargement
+                // de page, désynchronisé de la vraie cible de l'opération en cours.
+                sauvBkCible = op.sauvBkCible || 'pinnacle';
+                majBoutonsSauvBkCible();
                 document.getElementById('coteSecu').innerText = "MODE : SAUVETAGE";
                 document.getElementById('resProfit').innerText = (op.pCfa||0).toLocaleString() + " CFA";
                 // "wait" par défaut ici aussi (voir la même correction dans calculerSauvetage) :
-                // ne jamais présumer que le côté Pinnacle du sauvetage a gagné.
+                // ne jamais présumer que le côté cible du sauvetage a gagné.
                 document.getElementById('gagnant').value = 'wait';
                 const optSoft = document.querySelector('#gagnant option[value="s"]');
                 if(optSoft) optSoft.classList.toggle('hidden', !(op.os > 1));
@@ -4427,7 +4662,18 @@
                 document.getElementById('resN').style.fontSize = '0.7rem';
                 document.getElementById('resN').style.lineHeight = '1.4';
                 document.getElementById('resN').innerText = op.sides3.map((s,i) => `${i+1}:${(s.bk||'--').toUpperCase()} @${s.cote} = ${s.bk==='pinnacle'?(s.eur||0).toFixed(2)+'€':(s.cfa||0).toLocaleString()+' CFA'}`).join(' | ');
-                document.getElementById('resP').innerText = op.miseP_Eur;
+                // Même logique "Pinnacle non utilisé" qu'à la création (voir lancerArbitrage,
+                // branche 3 issues) — sans elle, restaurer après rechargement une opération à
+                // 3 issues sans Pinnacle affichait "0.00" sous le libellé encore générique
+                // "MISE PINNACLE (€)" au lieu du message clair "PINNACLE NON UTILISÉ".
+                const aggPinEurRestaure = op.sides3.reduce((s, x) => s + (x.bk === 'pinnacle' ? (x.eur||0) : 0), 0);
+                if (aggPinEurRestaure > 0) {
+                    document.getElementById('labelPin').innerText = `${(op.m1X>0||op.mM>0)?'4':'3'}. MISE PINNACLE (€)`;
+                    document.getElementById('resP').innerText = aggPinEurRestaure.toFixed(2);
+                } else {
+                    document.getElementById('labelPin').innerText = 'PINNACLE NON UTILISÉ';
+                    document.getElementById('resP').innerText = '0.00';
+                }
                 document.getElementById('coteSecu').innerText = 'RESTAURÉ';
                 document.getElementById('resProfit').innerText = "-- CFA (à valider)";
                 document.getElementById('gagnant').value = 'wait';
@@ -4438,7 +4684,17 @@
                 document.getElementById('divM').style.display  = op.mM>0?'block':'none';
                 document.getElementById('res1X').innerText = (op.m1X||0).toLocaleString();
                 document.getElementById('resM').innerText  = (op.mM||0).toLocaleString();
-                document.getElementById('resP').innerText  = op.miseP_Eur;
+                // Côté droit généralisé (op.bk2) — même principe qu'à la création (voir
+                // lancerArbitrage) : euros si Pinnacle, CFA sinon. Bug réel constaté sans
+                // cette distinction : restaurer après rechargement un arb 100% entre softs
+                // affichait "0.00" à la place du vrai montant CFA engagé sur l'autre soft.
+                const droitEstPin = (op.bk2 || 'pinnacle') === 'pinnacle';
+                document.getElementById('resP').innerText = droitEstPin ? op.miseP_Eur : Math.round(op.miseP_Cfa||0).toLocaleString('fr-FR');
+                document.getElementById('labelPin').innerText = droitEstPin ? '3. MISE PINNACLE (€)' : `3. MISE ${(op.bk2||'').toUpperCase()} (CFA)`;
+                // Resynchronise le toggle du côté fixe avec l'opération restaurée — même
+                // raison que pour le sauvetage juste au-dessus.
+                bkFixe = op.bk2 || 'pinnacle';
+                majBoutonsBkFixe();
                 document.getElementById('coteSecu').innerText = 'RESTAURÉ';
                 document.getElementById('resProfit').innerText = "-- CFA (à valider)";
                 document.getElementById('gagnant').value = 'wait';
@@ -4448,35 +4704,13 @@
             }
         }
         function getDailyGoal() { return 2; }
-        function updateGoalDisplay() { const goal = getDailyGoal(); const dots = document.getElementById('goalDots'); dots.innerHTML = ""; for(let i=1; i<=goal; i++){ let d = document.createElement('div'); d.className=`w-2 h-2 rounded-full ${i<=dailyCount?'bg-emerald-500 shadow-[0_0_8px_#10b981]':'bg-slate-800'}`; dots.appendChild(d); } document.getElementById('goalText').innerText = `${dailyCount} / ${goal} Surebets`; majSuggestionSoftJour(); }
+        function updateGoalDisplay() { const goal = getDailyGoal(); const dots = document.getElementById('goalDots'); dots.innerHTML = ""; for(let i=1; i<=goal; i++){ let d = document.createElement('div'); d.className=`w-2 h-2 rounded-full ${i<=dailyCount?'bg-emerald-500 shadow-[0_0_8px_#10b981]':'bg-slate-800'}`; dots.appendChild(d); } document.getElementById('goalText').innerText = `${dailyCount} / ${goal} Surebets`; }
 
         // Suggère quel soft privilégier pour la PROCHAINE opération du jour — répartir entre
         // 1xBet et 1Win plutôt que de toujours utiliser le même réduit la fréquence d'activité
         // sur chaque compte individuellement, cohérent avec la logique anti-détection déjà en
         // place (zones de wallet). Se base sur les opérations RÉELLEMENT lancées aujourd'hui
         // (hist, filtré sur la date du jour), jamais un simple compteur théorique.
-        function majSuggestionSoftJour() {
-            const p = document.getElementById('suggestionSoftJour');
-            const btn1xbet = document.getElementById('btn-1xbet');
-            const btn1win = document.getElementById('btn-1win');
-            const dejaUtilise1xbet = nbUtilisationsSoftAujourdHui('1xbet') >= 1;
-            const dejaUtilise1win = nbUtilisationsSoftAujourdHui('1win') >= 1;
-            // Pas de style "désactivé" (opacité/curseur) — les deux boutons restent
-            // pleinement fonctionnels, seule l'alerte elle-même dicte le vrai choix
-            // disponible. Un style visuellement "bloqué" sur un bouton qui fonctionne encore
-            // induirait en erreur.
-            if (!p) return;
-            if (!dejaUtilise1xbet && !dejaUtilise1win) { p.classList.add('hidden'); return; }
-            if (dejaUtilise1xbet && dejaUtilise1win) {
-                p.textContent = `✅ Répartition du jour atteinte — 1xBet et 1Win déjà utilisés une fois chacun.`;
-                p.classList.remove('hidden');
-                return;
-            }
-            const suggere = dejaUtilise1xbet ? '1Win' : '1xBet';
-            p.textContent = `⛔ ${dejaUtilise1xbet ? '1xBet' : '1Win'} déjà utilisé aujourd'hui — seul ${suggere} peut être lancé jusqu'à demain.`;
-            p.classList.remove('hidden');
-        }
-
         // Reset automatique de l'objectif quotidien au changement de jour (date locale),
         // sans attendre un clic manuel sur "Clôturer Journée". N'affecte jamais les wallets
         // ni le capital — uniquement le compteur d'objectif "X / N Surebets".
@@ -5129,12 +5363,20 @@
                 if(h.type === 'MUTATION') return {
                     "DATE":h.fullDate,"TYPE":"CLÔTURE SESSION","ISSUES":"--","MODE":"--",
                     "CÔTÉ 1 (BK@COTE)":"--","CÔTÉ 2 (BK@COTE)":"--","CÔTÉ 3 (BK@COTE)":"--",
-                    "1XBET (CFA)":0,"1WIN (CFA)":0,"PIN (€)":0,
+                    "1XBET (CFA)":0,"1WIN (CFA)":0,"CÔTÉ 2 (MONTANT)":"--",
                     "GAGNANT":"--","PROFIT (CFA)":h.pCfa||0,"ROI %":"--","STATUT":"MUTATION"
                 };
 
                 // Détail des côtés pour 3 issues flexible
                 let c1lab='--', c2lab='--', c3lab='--', gagnant='--';
+                // Bookmaker du côté 2 généralisé (Pinnacle par défaut si absent — anciennes
+                // opérations enregistrées avant ces champs) : sans cette généralisation, la
+                // colonne restait étiquetée "PINNACLE" et en euros même pour un arb 100%
+                // entre softs, faisant disparaître silencieusement le vrai montant engagé de
+                // ce fichier d'audit.
+                const bkC2 = h.type === 'SAUVETAGE' ? (h.sauvBkCible || 'pinnacle') : (h.bk2 || 'pinnacle');
+                const nomC2 = bkC2 === '1xbet' ? '1XBET' : bkC2 === '1win' ? '1WIN' : 'PINNACLE';
+                const valC2 = bkC2 === 'pinnacle' ? `${h.miseP_Eur||0}€` : `${(h.miseP_Cfa||0).toLocaleString()} CFA`;
                 if(h.issues===3 && h.sides3) {
                     c1lab = `${(h.sides3[0]?.bk||'?').toUpperCase()}@${h.sides3[0]?.cote||'?'} = ${h.sides3[0]?.bk==='pinnacle'?(h.sides3[0].eur||0).toFixed(2)+'€':(h.sides3[0]?.cfa||0).toLocaleString()+' CFA'}`;
                     c2lab = `${(h.sides3[1]?.bk||'?').toUpperCase()}@${h.sides3[1]?.cote||'?'} = ${h.sides3[1]?.bk==='pinnacle'?(h.sides3[1].eur||0).toFixed(2)+'€':(h.sides3[1]?.cfa||0).toLocaleString()+' CFA'}`;
@@ -5147,14 +5389,14 @@
                     }
                 } else if(h.type==='SAUVETAGE') {
                     c1lab = `SOFT@1 = ${(h.miseS||0).toLocaleString()} CFA`;
-                    c2lab = `PINNACLE@${h.opn||'?'} = ${h.miseP_Eur||0}€`;
-                    gagnant = h.status==='PENDING' ? 'EN ATTENTE' : `SAUVETAGE — PINNACLE @${h.opn}`;
+                    c2lab = `${nomC2}@${h.opn||'?'} = ${valC2}`;
+                    gagnant = h.status==='PENDING' ? 'EN ATTENTE' : `SAUVETAGE — ${nomC2} @${h.opn}`;
                 } else {
                     c1lab = `SOFT@${h.os||'?'} = ${((h.m1X||0)+(h.mM||0)).toLocaleString()} CFA`;
-                    c2lab = `PINNACLE@${h.opn||'?'} = ${h.miseP_Eur||0}€`;
+                    c2lab = `${nomC2}@${h.opn||'?'} = ${valC2}`;
                     if(h.status==='PENDING') gagnant='EN ATTENTE';
                     else if(h.winner==='s') gagnant=`SOFT — ${(h.softId||'').toUpperCase()} @${h.os}`;
-                    else if(h.winner==='p') gagnant=`PINNACLE @${h.opn}`;
+                    else if(h.winner==='p') gagnant=`${nomC2} @${h.opn}`;
                     else gagnant='--';
                 }
 
@@ -5168,7 +5410,11 @@
                     "CÔTÉ 3 (BK@COTE)": c3lab,
                     "1XBET (CFA)": h.m1X||0,
                     "1WIN (CFA)": h.mM||0,
-                    "PIN (€)": h.miseP_Eur||0,
+                    // Renommée depuis "PIN (€)" : ce côté n'est plus toujours Pinnacle ni
+                    // toujours en euros — la valeur porte désormais sa propre unité, comme
+                    // "CÔTÉ 1/2/3 (BK@COTE)" juste au-dessus, pour ne jamais perdre le vrai
+                    // montant engagé sur un arb 100% entre softs.
+                    "CÔTÉ 2 (MONTANT)": valC2,
                     "GAGNANT": gagnant,
                     "PROFIT (CFA)": h.pCfa||0,
                     "ROI %": (h.pPct&&h.pPct!=='--') ? h.pPct+'%' : '--',
@@ -5190,9 +5436,15 @@
         function resolvPending(index, winner) {
             const h = hist[index];
             if(!h || h.status !== 'PENDING') return;
+            // Même généralisation que cloturerCycle() — miseP_Cfa n'est à additionner que si
+            // le côté 2 est Pinnacle POUR UN 'PARI' (sinon déjà compté dans m1X/mM) ; pour un
+            // 'SAUVETAGE', h.bk2 n'est jamais renseigné (seul h.sauvBkCible l'est), donc la
+            // condition retombe toujours sur son repli 'pinnacle' et additionne
+            // systématiquement — le bon comportement, puisque m1X/mM d'un sauvetage ne
+            // contiennent jamais la mise de la cible, quelle qu'elle soit.
             const totalEngage = (h.issues===3 && h.sides3)
                 ? h.sides3.reduce((s, x) => s + (x.cfa||0), 0)
-                : (h.m1X||0) + (h.mM||0) + (h.miseP_Cfa||0);
+                : (h.m1X||0) + (h.mM||0) + ((h.bk2||'pinnacle')==='pinnacle' ? (h.miseP_Cfa||0) : 0);
             let retour = 0;
             if(h.issues===3 && h.sides3) {
                 const idx = winner==='s'?0 : winner==='p'?1 : 2;
@@ -5202,9 +5454,21 @@
                 else if(side.bk==='1win')   bM  += retour;
                 else if(side.bk==='pinnacle') bP  += retour;
             } else if(winner==='s') {
-                retour=(h.m1X*h.os)+(h.mM*h.os); b1X+=(h.m1X*h.os); bM+=(h.mM*h.os);
+                // Origine dérivée de h.softId (voir cloturerCycle pour le détail) — seul le
+                // wallet correspondant est crédité, avec SA cote, jamais l'autre wallet à
+                // tort avec la même cote.
+                const origineSoft = (h.softId || '').replace('SAUVETAGE-', '').toLowerCase();
+                const miseOrigine = origineSoft === '1xbet' ? h.m1X : h.mM;
+                retour = miseOrigine * h.os;
+                if (origineSoft === '1xbet') b1X += retour; else bM += retour;
             } else if(winner==='p'||winner==='sauv') {
-                retour=h.miseP_Cfa*h.opn; bP+=retour;
+                retour = h.miseP_Cfa*h.opn;
+                // bk2 (opération normale) ou sauvBkCible (sauvetage) généralisés — Pinnacle
+                // par défaut si absent (anciennes opérations enregistrées avant ces champs).
+                const bkDroit = h.type === 'SAUVETAGE' ? (h.sauvBkCible || 'pinnacle') : (h.bk2 || 'pinnacle');
+                if (bkDroit === '1xbet') b1X += retour;
+                else if (bkDroit === '1win') bM += retour;
+                else bP += retour;
             }
             // NB : la branche 3 issues (h.sides3) plus haut couvre déjà 'n' — cette
             // ancienne branche basée sur h.soft3 (jamais défini côté 3 issues flexible)

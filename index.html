@@ -1420,7 +1420,14 @@
                     // termine jamais par un tiret isolé. .trim() seul ne le retire pas (ce n'est
                     // pas un espace). Bug réel constaté : "Deportivo Cuenca (Corners)-Mushuc —"
                     // gardait ce tiret en fin de nom avant recollement de la suite du nom.
-                    reste = reste.replace(/[-–—]\s*$/, '').trim();
+                    // UNIQUEMENT le tiret CADRATIN "—" — jamais le tiret demi-cadratin "–" ni le
+                    // trait d'union "-", qui eux sont le VRAI séparateur entre deux noms sur les
+                    // sports individuels (ex. "Gabriella Da Silva Fick (Games) – Valentina
+                    // Steiner (Games)") et doivent être préservés pour que le recollement de la
+                    // ligne suivante les restitue à la bonne place. Bug réel constaté sans cette
+                    // distinction : "Gabriella Da Silva Fick (Games) – Valentina Steiner (Games)"
+                    // perdait son "–" central, recollant les deux joueuses sans aucun séparateur.
+                    reste = reste.replace(/—\s*$/, '').trim();
                     const bloc = { bookmaker, match: reste, ligue: '', marche, cote, coteReconstituee };
                     const suivante = lignes[i + 1] || '';
                     // Rejette `suivante` comme ligue UNIQUEMENT si elle ressemble elle-même à la
@@ -1451,10 +1458,16 @@
                         // porte souvent lui-même ce suffixe ("Runa (Corners)"). Bug réel constaté
                         // sans cette tolérance : "Runa (Corners)" (fin du nom de l'équipe 2)
                         // était pris à tort pour la LIGUE entière, tronquant le nom du match et
-                        // perdant la vraie ligue ("Soccer. Ecuador - Serie A Corners").
+                        // perdant la vraie ligue ("Soccer. Ecuador - Serie A Corners"). Jusqu'à 3
+                        // mots supplémentaires sont tolérés (pas un seul) — un sport individuel
+                        // (tennis...) a des joueurs nommés sur PLUSIEURS mots ("Valentina
+                        // Steiner"), pas juste un nom d'équipe en un mot. Bug réel constaté sans
+                        // cette tolérance : "Valentina Steiner (Games)" échouait le test entier
+                        // (seul un mot isolé était accepté), et n'était donc JAMAIS rattaché au
+                        // nom du match — la 2e joueuse disparaissait purement et simplement.
                         const ressembleLigue = (l2) => l2.includes('.') || SPORTS_CONNUS.some(s => normaliserNomSport(l2).includes(normaliserNomSport(s)));
                         const apresSuivante = lignes[i + 2] || '';
-                        if (!ressembleLigue(suivante) && /^[a-zà-öø-ÿ]{2,20}(\s*\+[a-zà-öø-ÿ]{1,10})?(\s*\([^)]{2,20}\))?$/i.test(suivante.trim()) && ressembleLigue(apresSuivante)) {
+                        if (!ressembleLigue(suivante) && /^[a-zà-öø-ÿ]{2,20}(\s+[a-zà-öø-ÿ]{2,20}){0,3}(\s*\+[a-zà-öø-ÿ]{1,10})?(\s*\([^)]{2,20}\))?$/i.test(suivante.trim()) && ressembleLigue(apresSuivante)) {
                             bloc.match = (bloc.match + ' ' + suivante).trim();
                             bloc.ligue = apresSuivante.replace(/vv/gi, m => m[0] === m[0].toUpperCase() ? "W" : "w");
                             i += 2; // consomme le reste du nom ET la vraie ligue, pas seulement l'un des deux

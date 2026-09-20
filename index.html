@@ -1027,6 +1027,17 @@
             return d;
         }
 
+        // Une seule lettre majuscule isolée n'est JAMAIS un vrai code de marché, SAUF "X" (le
+        // nul, seul marché légitime à une lettre dans ce schéma — 1/2 sont des chiffres, pas
+        // des lettres). Sert à écarter un résidu OCR isolé qui, par coïncidence, ressemble
+        // syntaxiquement à un marché valide et trompe la règle d'extraction ci-dessous. Bug
+        // réel constaté : "...LNZ X2 L 3.445" — le vrai marché "X2" se faisait ignorer au
+        // profit du résidu "L" juste avant la cote, qui satisfaisait lui aussi le motif
+        // [A-Z0-9]{1,4} en position finale.
+        function estResiduLettreSeule(token) {
+            return /^[A-WYZ]$/.test(token);
+        }
+
         function corrigerPointMarche(marcheStr, sport) {
             if (!marcheStr) return marcheStr;
             // Ne jamais reconstituer un point décimal sur un marché "3-way" (Plus/Moins/
@@ -1351,24 +1362,28 @@
                         // constaté : le marché d'un bloc "Corners" restait vide (affiché "?") alors
                         // que la cote et le reste étaient corrects.
                         const mMarche = reste.match(/(?<=^|\s|\))([A-Z0-9]{1,4}(?:\s?\([^)]{0,15}\))*)\s*$/);
-                        if (mMarche && mMarche[1]) {
+                        if (mMarche && mMarche[1] && !estResiduLettreSeule(mMarche[1])) {
                             marche = corrigerPointMarche(mMarche[1], meta.sport);
                             reste = reste.slice(0, mMarche.index).trim();
                         } else {
-                            // Filet de repli — l'extraction directe a totalement échoué : souvent
+                            // Filet de repli — l'extraction directe a totalement échoué, OU n'a
+                            // trouvé qu'un résidu isolé d'une seule lettre (estResiduLettreSeule,
+                            // voir sa définition) qui n'est jamais un vrai marché : souvent
                             // parce qu'un résidu court (1-2 caractères) traîne juste après un
                             // marché NU (sans parenthèses, ex. "X2", "1"), ce que le filet
                             // "après parenthèse fermante" ci-dessus ne couvre pas. On ne retente
-                            // QUE si la première tentative n'a RIEN trouvé — jamais en plus d'un
-                            // marché déjà identifié — pour ne jamais risquer d'écraser une vraie
-                            // trouvaille. Bug réel constaté : "X2 f" perdait son marché "X2", qui
-                            // se faisait ensuite REMPLACER par une fausse déduction "AH2(0.5)"
-                            // venant de l'autre bloc — pas juste une perte d'info, un résultat
-                            // faux affiché avec la même assurance qu'un vrai.
+                            // QUE si la première tentative n'a RIEN trouvé de valide — jamais en
+                            // plus d'un marché déjà identifié — pour ne jamais risquer d'écraser
+                            // une vraie trouvaille. Bug réel constaté : "X2 f" perdait son marché
+                            // "X2", qui se faisait ensuite REMPLACER par une fausse déduction
+                            // "AH2(0.5)" venant de l'autre bloc ; et "X2 L" (résidu "L" isolé,
+                            // majuscule cette fois) faisait carrément élire "L" comme marché —
+                            // pas juste une perte d'info, un résultat faux affiché avec la même
+                            // assurance qu'un vrai.
                             const resteSansResidu = reste.replace(/\s+[a-zA-Z0-9]{1,2}\s*$/, '').trim();
                             if (resteSansResidu !== reste) {
                                 const mMarche2 = resteSansResidu.match(/(?<=^|\s|\))([A-Z0-9]{1,4}(?:\s?\([^)]{0,15}\))*)\s*$/);
-                                if (mMarche2 && mMarche2[1]) {
+                                if (mMarche2 && mMarche2[1] && !estResiduLettreSeule(mMarche2[1])) {
                                     marche = corrigerPointMarche(mMarche2[1], meta.sport);
                                     reste = resteSansResidu.slice(0, mMarche2.index).trim();
                                 }
@@ -1413,17 +1428,18 @@
                         // Même correctif "x2"/"Xx2"/"x1"/"Xx1" -> "X2"/"X1" que dans la branche principale.
                         reste = reste.replace(/\bx{1,2}([12])\b/gi, 'X$1');
                             const mMarche = reste.match(/(?<=^|\s|\))([A-Z0-9]{1,4}(?:\s?\([^)]{0,15}\))*)\s*$/);
-                            if (mMarche && mMarche[1]) {
+                            if (mMarche && mMarche[1] && !estResiduLettreSeule(mMarche[1])) {
                                 marche = corrigerPointMarche(mMarche[1], meta.sport);
                                 reste = reste.slice(0, mMarche.index).trim();
                             } else {
                                 // Même filet de repli que dans la branche principale (voir plus haut) :
                                 // résidu court après un marché nu, non couvert par le retrait ci-dessus
-                                // (qui exige une parenthèse fermante juste avant).
+                                // (qui exige une parenthèse fermante juste avant), ou résidu isolé
+                                // d'une seule lettre majuscule ("L"...) qui aurait trompé le motif.
                                 const resteSansResidu = reste.replace(/\s+[a-zA-Z0-9]{1,2}\s*$/, '').trim();
                                 if (resteSansResidu !== reste) {
                                     const mMarche2 = resteSansResidu.match(/(?<=^|\s|\))([A-Z0-9]{1,4}(?:\s?\([^)]{0,15}\))*)\s*$/);
-                                    if (mMarche2 && mMarche2[1]) {
+                                    if (mMarche2 && mMarche2[1] && !estResiduLettreSeule(mMarche2[1])) {
                                         marche = corrigerPointMarche(mMarche2[1], meta.sport);
                                         reste = resteSansResidu.slice(0, mMarche2.index).trim();
                                     }

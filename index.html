@@ -546,8 +546,8 @@
                                 <p id="margeMiseGlobale" class="text-[8px] font-black uppercase text-center mt-0.5"></p>
                             </div>
                             <div class="grid grid-cols-2 gap-4">
-                                <div class="text-center"><label class="text-[8px] text-slate-500 uppercase">Cote Soft</label><input type="number" id="coteS" placeholder="0.00" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none"><p id="minSoft" class="text-[7px] text-slate-600 uppercase mt-1">min : —</p><p id="besoinSoft" class="text-[7px] uppercase mt-0.5"></p><p id="palierCoteS" class="text-[7px] font-black uppercase mt-0.5"></p></div>
-                                <div class="text-center"><label class="text-[8px] text-slate-500 uppercase">Cote Pin</label>
+                                <div class="text-center"><label id="labelCoteSoft" class="text-[8px] text-slate-500 uppercase">Cote Soft</label><input type="number" id="coteS" placeholder="0.00" step="0.01" min="1.01" oninput="validerProfitMin()" class="w-full bg-slate-900 p-4 rounded-xl border border-white/5 font-bold text-center outline-none"><p id="minSoft" class="text-[7px] text-slate-600 uppercase mt-1">min : —</p><p id="besoinSoft" class="text-[7px] uppercase mt-0.5"></p><p id="palierCoteS" class="text-[7px] font-black uppercase mt-0.5"></p></div>
+                                <div class="text-center"><label id="labelCotePin" class="text-[8px] text-slate-500 uppercase">Cote Pin</label>
                                     <!-- Toggle du côté fixe (droite) : Pinnacle (comportement historique, par
                                     défaut) ou l'AUTRE soft, pour un arb 100% entre softs (1xBet vs 1Win). Le
                                     libellé du 2e bouton se met à jour dynamiquement (majBoutonsBkFixe) selon
@@ -3750,7 +3750,21 @@
         // de "l'autre soft" dépend de ce qui est choisi à gauche (softSelected), donc ce
         // libellé doit se rafraîchir à chaque changement de côté, pas seulement au clic sur
         // le bouton du côté fixe lui-même.
+        // Libellés des deux champs de cote, mis à jour pour refléter le VRAI bookmaker
+        // sélectionné (softSelected / bkFixe) plutôt qu'un générique "Cote Soft"/"Cote Pin"
+        // figé — demande explicite de l'utilisateur : les libellés doivent s'actualiser par
+        // rapport à l'alerte collée (qui appelle selectSoft/selectBkFixe), pas rester
+        // statiques pendant que le bon bookmaker n'est visible que via les petits boutons de
+        // sélection au-dessus.
+        function majLabelsCote() {
+            const labelSoft = document.getElementById('labelCoteSoft');
+            const labelPin = document.getElementById('labelCotePin');
+            if (labelSoft) labelSoft.innerText = softSelected === '1xbet' ? 'Cote 1xBet' : softSelected === '1win' ? 'Cote 1Win' : 'Cote Soft';
+            if (labelPin) labelPin.innerText = bkFixe === '1xbet' ? 'Cote 1xBet' : bkFixe === '1win' ? 'Cote 1Win' : 'Cote Pinnacle';
+        }
+
         function majBoutonsBkFixe() {
+            majLabelsCote();
             const btnPin = document.getElementById('btnBkFixePin');
             const btnAutre = document.getElementById('btnBkFixeAutre');
             if (!btnPin || !btnAutre) return;
@@ -4328,6 +4342,18 @@
             }
 
             if(issuesMode === 2) {
+                // Garde-fou : tout ce bloc (mises, indicateurs "Besoin", messages du bouton)
+                // suppose des cotes valides des deux côtés. Sans lui, cs=0/cp=0 (champs vides
+                // ou avant collage d'une alerte) donnait arb=Infinity puis mS/mPC=NaN,
+                // affichés tels quels ("⚠️ MANQUE NaN €") avant même la première saisie. Bug
+                // réel constaté par l'utilisateur, visible dès l'ouverture de l'app.
+                if (!(cs > 1 && cp > 1)) {
+                    const cBS = document.getElementById('besoinSoft'); if (cBS) { cBS.innerHTML = ''; cBS.className = 'hidden'; }
+                    const cBP = document.getElementById('besoinPin'); if (cBP) { cBP.innerHTML = ''; cBP.className = 'hidden'; }
+                    btn.disabled = true; btn.className = "w-full py-5 bg-red-900/20 text-red-500 rounded-3xl font-black text-[11px] uppercase cursor-not-allowed italic";
+                    btn.innerText = t > 0 ? "SAISIE DES DONNÉES EN COURS" : "DÉFINIR CAPITAL DE RÉFÉRENCE";
+                    return;
+                }
                 const arb = (1/cs) + (1/cp);
                 let mS = Math.round(((t/arb)/cs)/PAS_ARRONDI_CFA)*PAS_ARRONDI_CFA;
                 // mPC = mise sur le côté fixe (droite), toujours en équivalent CFA en interne,

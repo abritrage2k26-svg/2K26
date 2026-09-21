@@ -1747,7 +1747,31 @@
             if (cotesUtilisees.length >= 2 && meta.edgePct) {
                 const arb = cotesUtilisees.reduce((s, c) => s + (1 / c), 0);
                 const edgeCalcule = ((1 / arb) - 1) * 100;
-                const edgeAnnonce = parseFloat(meta.edgePct);
+                const edgeAnnonceBrut = parseFloat(meta.edgePct);
+                let edgeAnnonce = edgeAnnonceBrut;
+                if (!isNaN(edgeAnnonceBrut)) {
+                    // Artefact OCR connu : le symbole "%" est parfois lu par Tesseract comme
+                    // un chiffre "9" collé au dernier chiffre du nombre (les deux petits
+                    // cercles du "%" ressemblent à un "9"), ce qui transforme par exemple
+                    // "1.9%" en "1.99%" — un chiffre fantôme dupliqué juste avant le %.
+                    // On ne corrige JAMAIS par simple regex (un vrai edge peut légitimement se
+                    // terminer par un chiffre répété, ex: 1.55%) : on ne tronque que si le
+                    // résultat colle nettement mieux à l'edge recalculé à partir des cotes
+                    // réellement lues (bien plus fiables — aucun "%" à confondre) que le
+                    // nombre brut, et seulement quand l'écart brut n'était pas déjà négligeable.
+                    const ecartBrut = Math.abs(edgeCalcule - edgeAnnonceBrut);
+                    if (ecartBrut > 0.05 && /\d\.\d{2}$/.test(meta.edgePct)) {
+                        const tronque = meta.edgePct.slice(0, -1);
+                        const edgeTronque = parseFloat(tronque);
+                        const ecartTronque = !isNaN(edgeTronque) ? Math.abs(edgeCalcule - edgeTronque) : Infinity;
+                        if (ecartTronque <= 0.3 && ecartTronque < ecartBrut / 2) {
+                            avertissements.push(`🔢 Edge annoncé corrigé automatiquement : "${meta.edgePct}%" lu par l'OCR → "${tronque}%" (le symbole "%" est parfois confondu avec un chiffre "9" collé au nombre par l'OCR ; cohérent avec l'edge recalculé à partir des cotes lues : ${edgeCalcule.toFixed(2)}%). Vérifie sur ta capture d'origine si un doute persiste.`);
+                            incertitudesDonnees.push(`Edge annoncé corrigé par l'OCR : "${meta.edgePct}%" → "${tronque}%"`);
+                            meta.edgePct = tronque;
+                            edgeAnnonce = edgeTronque;
+                        }
+                    }
+                }
                 if (!isNaN(edgeAnnonce) && Math.abs(edgeCalcule - edgeAnnonce) > 1.5) {
                     avertissements.push(`⚠️ Écart suspect : edge annoncé par l'alerte ${edgeAnnonce}%, mais edge calculé à partir des cotes lues ${edgeCalcule.toFixed(2)}% — une cote a probablement été mal lue, vérifie avant de lancer.`);
                     incertitudesDonnees.push(`Écart edge annoncé (${edgeAnnonce}%) vs calculé (${edgeCalcule.toFixed(2)}%)`);

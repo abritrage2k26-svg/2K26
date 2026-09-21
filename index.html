@@ -1123,9 +1123,30 @@
             });
             // On retire les symboles/icônes en tête de ligne (🔒📌 etc. que l'OCR transforme
             // souvent en caractères parasites) pour ne pas fausser la détection de bloc.
-            const lignes = texteNettoye.split('\n')
-                .map(l => l.trim().replace(/^[^\p{L}\p{N}]+/u, '').trim())
-                .filter(l => l.length > 0);
+            // `ligneEspaceAvant[k]` retient, pour CHAQUE ligne conservée, si elle était séparée
+            // de la ligne précédente par au moins une ligne vide dans le texte brut ORIGINAL —
+            // une information sinon perdue une fois les lignes vides filtrées ci-dessous, mais
+            // qui s'avère être le seul signal fiable pour distinguer deux mises en page très
+            // différentes qui produisent un texte identique une fois les vides retirées (voir
+            // le filet de sécurité "ligues groupées après coup" plus bas, alertes réelles Noah
+            // Karma - Jack Karlsson Wistrand vs Eva Vedder - Charo Esquiva Banuls) : une ligue
+            // collée SANS ligne vide juste après la rangée de son propre bookmaker lui
+            // appartient réellement (mise en page normale) ; une ligue séparée par une ligne
+            // vide peut en réalité appartenir à un AUTRE bookmaker du groupe (mise en page où
+            // BreakingBet a rendu toutes les rangées bookmaker d'abord, puis toutes les ligues
+            // ensemble, dans un paragraphe à part).
+            const lignes = [];
+            const ligneEspaceAvant = [];
+            {
+                let vuLigneVide = false;
+                for (const lBrute of texteNettoye.split('\n')) {
+                    const l = lBrute.trim().replace(/^[^\p{L}\p{N}]+/u, '').trim();
+                    if (l.length === 0) { vuLigneVide = true; continue; }
+                    lignes.push(l);
+                    ligneEspaceAvant.push(lignes.length > 1 ? vuLigneVide : false);
+                    vuLigneVide = false;
+                }
+            }
             const meta = { edgePct: null, sport: null, dateHeure: null, marcheGlobal: null, blocs: [], texteBrut, totalAnnonce };
 
             for (const l of lignes) {
@@ -1655,11 +1676,32 @@
             // pour une autre raison), et le nombre de lignes de ligue consécutives trouvées
             // juste après celle déjà capturée par le bloc restant correspond EXACTEMENT au
             // nombre de blocs à réparer — sinon on ne touche à rien.
+            //
+            // Signal supplémentaire INDISPENSABLE (ligneEspaceAvant), découvert sur une alerte
+            // réelle ultérieure qui a d'abord fait régresser ce correctif : Eva Vedder - Charo
+            // Esquiva Banuls (Tennis, DNB, 1xbet vs ps3838). Texte brut structurellement
+            // IDENTIQUE au cas Noah Karma une fois les lignes vides filtrées (1 bloc différé,
+            // 1 bloc qui capture normalement une ligue, 1 ligne de ligue orpheline ensuite) —
+            // mais la bonne réponse y est l'INVERSE : la ligue capturée normalement par le
+            // dernier bloc ("Tennis. ITF Women Yecla - R1") lui appartenait VRAIMENT (collée
+            // SANS ligne vide juste après sa propre rangée bookmaker), et c'est la ligne
+            // orpheline qui appartenait au bloc différé — réassigner (comme pour Noah Karma)
+            // aurait alors INVERSÉ les deux ligues, un résultat FAUX affiché avec la même
+            // assurance qu'un vrai. La différence entre les deux cas n'est visible que dans
+            // les lignes vides du texte brut ORIGINAL (perdues après filtrage) : chez Noah
+            // Karma, la ligue capturée était elle-même séparée par une ligne vide de sa
+            // rangée bookmaker (mise en page "tout groupé à part") ; chez Eva Vedder, elle en
+            // était directement collée (mise en page normale, juste un bloc en plus resté
+            // orphelin en fin de texte). On ne réassigne donc QUE si ce signal confirme une
+            // mise en page "groupée" — sinon on laisse la ligue différée vide, et le filet de
+            // secours `ligueSoftViaAutreBookmaker` (avec son avertissement explicite) prend le
+            // relais plutôt que d'afficher une valeur inversée sans aucun avertissement.
             {
                 const blocsDifferes = meta.blocs.filter(b => b._ligueDifferee);
                 const blocAvecLigue = meta.blocs.find(b => !b._ligueDifferee);
                 if (blocsDifferes.length > 0 && blocsDifferes.length === meta.blocs.length - 1
-                    && blocAvecLigue && blocAvecLigue.ligue && blocAvecLigue._ligneIndexLigue != null) {
+                    && blocAvecLigue && blocAvecLigue.ligue && blocAvecLigue._ligneIndexLigue != null
+                    && ligneEspaceAvant[blocAvecLigue._ligneIndexLigue] === true) {
                     const ressembleLigueRepli = (l2) => l2.includes('.') || SPORTS_CONNUS.some(s => normaliserNomSport(l2).includes(normaliserNomSport(s)));
                     const lignesLigueSuivantes = [];
                     for (let k = 1; k <= blocsDifferes.length; k++) {

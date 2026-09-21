@@ -1135,14 +1135,21 @@
                 // "1 P 1 7%". La règle stricte \d+[.,]\d+% (sans espaces tolérés) ratait alors
                 // totalement l'edge, affichant "?" au lieu du vrai pourcentage. On capture toute
                 // la portion de chiffres/points/virgules/espaces/"P" isolé juste avant le "%",
-                // on la nettoie (espaces retirés, "P"→"."), puis on exige un vrai format
-                // décimal "N.NN" en sortie — jamais un entier seul, qui pourrait être autre
-                // chose (une heure, un numéro de ligne...).
-                const m = l.match(/([\d.,Pp\s]{2,12})%/);
+                // on la nettoie (espaces retirés, "P"→"."), puis on accepte soit un format
+                // décimal "N.NN", soit un entier seul "N" — BreakingBet affiche parfois l'edge
+                // comme un nombre rond sans décimale quand il tombe pile dessus (bug réel
+                // constaté : "1%" pour une alerte dont les cotes recalculées donnent 1.003%,
+                // confirmant que ce n'était pas une perte de données à rejeter par précaution,
+                // mais bien le vrai edge annoncé). {1,12} et pas {2,12} : un edge à un seul
+                // chiffre ("1%") a besoin d'au moins 1 caractère avant le "%", pas 2 — sinon la
+                // capture échouait totalement, avant même la vérification du format.
+                const m = l.match(/([\d.,Pp\s]{1,12})%/);
                 if (m) {
                     const candidat = m[1].replace(/\s+/g, '').replace(/[Pp]/g, '.');
-                    const mPropre = candidat.match(/^(\d+)[.,](\d+)$/);
-                    if (mPropre) { meta.edgePct = `${mPropre[1]}.${mPropre[2]}`; break; }
+                    const mDecimal = candidat.match(/^(\d+)[.,](\d+)$/);
+                    const mEntier = candidat.match(/^(\d+)$/);
+                    if (mDecimal) { meta.edgePct = `${mDecimal[1]}.${mDecimal[2]}`; break; }
+                    if (mEntier) { meta.edgePct = mEntier[1]; break; }
                 }
             }
             for (const l of lignes) {
@@ -1264,8 +1271,15 @@
                     // ne matche pas "Kï" car "ï" ≠ "i", et le filtre non-ASCII plus bas ne
                     // matche pas non plus car le tout premier caractère ("K") est bien ASCII.
                     // Bug réel constaté : bloc PS3838 gardait "Kï Fiji" au lieu de "Fiji".
-                    reste = reste.replace(/^(?:mi|ki|wi|bi|k|m|w|b)[^\x00-\x7F]\s+(?=[A-ZÀ-Ý])/i, '').trim();
-                    reste = reste.replace(/^(?:mi|ki|wi|bi|k|m|w|b)\s+(?=[A-ZÀ-Ý])/i, '').trim();
+                    // "u" isolé (ou "ui") est une nouvelle variante du même résidu — constatée
+                    // sur une vraie alerte 1Win : "u PAOK B - Nestos Chrisoupoli" gardait ce "u"
+                    // parasite en tête du nom d'équipe. Même raisonnement que "w"/"W" ci-dessus
+                    // pour le risque de troncature d'un vrai préfixe de club : négligeable face
+                    // à la fréquence du résidu, et aucun nom d'équipe suivi par cette stratégie
+                    // ne commence légitimement par un "u" isolé suivi d'un espace puis d'une
+                    // majuscule.
+                    reste = reste.replace(/^(?:mi|ki|wi|bi|ui|k|m|w|b|u)[^\x00-\x7F]\s+(?=[A-ZÀ-Ý])/i, '').trim();
+                    reste = reste.replace(/^(?:mi|ki|wi|bi|ui|k|m|w|b|u)\s+(?=[A-ZÀ-Ý])/i, '').trim();
                     // Autre variante de lecture du même bouton "copier" — cette fois rendu en
                     // caractères non-ASCII plutôt qu'en lettres latines parasites (pas la flèche
                     // de mouvement de cote gérée plus loin en fin de ligne : icône différente,

@@ -1282,8 +1282,14 @@
                     // Moscow, bloc 1xBet) : "gi Amur Khabarovsk - CSKA Moscow" gardait ce "gi"
                     // parasite en tête du nom, jamais un vrai préfixe de club sur les ligues
                     // suivies par cette stratégie.
-                    reste = reste.replace(/^(?:mi|ki|wi|bi|ui|gi|k|m|w|b|u)[^\x00-\x7F]\s+(?=[A-ZÀ-Ý])/i, '').trim();
-                    reste = reste.replace(/^(?:mi|ki|wi|bi|ui|gi|k|m|w|b|u)\s+(?=[A-ZÀ-Ý])/i, '').trim();
+                    // "KW" (deux lettres ASCII majuscules collées, sans accent isolé) est une
+                    // variante supplémentaire (alerte réelle Admiral Vladivostok - Lokomotiv
+                    // Yaroslavl, bloc 1xBet) : "KW Admiral Vladivostok - Lokomotiv Yaroslavl"
+                    // gardait ce "KW" parasite en tête, remontant jusqu'au champ "Contexte du
+                    // signal" pré-rempli à l'écran — même bouton "copier" que les autres
+                    // variantes, juste lu différemment par l'OCR selon la capture.
+                    reste = reste.replace(/^(?:mi|ki|wi|bi|ui|gi|kw|k|m|w|b|u)[^\x00-\x7F]\s+(?=[A-ZÀ-Ý])/i, '').trim();
+                    reste = reste.replace(/^(?:mi|ki|wi|bi|ui|gi|kw|k|m|w|b|u)\s+(?=[A-ZÀ-Ý])/i, '').trim();
                     // Autre variante de lecture du même bouton "copier" — cette fois rendu en
                     // caractères non-ASCII plutôt qu'en lettres latines parasites (pas la flèche
                     // de mouvement de cote gérée plus loin en fin de ligne : icône différente,
@@ -1702,6 +1708,14 @@
             if (champMatch) champMatch.value = premierBlocAvecMatch ? premierBlocAvecMatch.match : '';
             if (champLigue) champLigue.value = (premierBlocAvecLigue && premierBlocAvecLigue.ligue) || '';
             if (champMarche) champMarche.value = meta.marcheGlobal || '';
+            // Repéré pour avertissement plus bas (une fois `avertissements`/`incertitudesDonnees`
+            // déclarés) : la ligue du bloc SOFT n'a pas été lue par l'OCR, et celle affichée dans
+            // le contexte du signal a en fait été récupérée sur l'AUTRE bookmaker (généralement
+            // Pinnacle). Ce n'est pas forcément faux (souvent la même compétition), mais ce n'est
+            // pas garanti — le texte de ligue diffère parfois légèrement entre bookmakers (langue,
+            // formulation). Bug réel constaté sans cet avertissement : la substitution était
+            // totalement invisible pour l'utilisateur, qui croyait lire la ligue du soft lui-même.
+            const ligueSoftViaAutreBookmaker = !!(blocSoft && !blocSoft.ligue && blocSoftPourLigue === null && premierBlocAvecLigue && premierBlocAvecLigue !== blocSoft);
 
             if (nb >= 3) {
                 // Alerte à 3 issues : un côté par bloc, dans l'ordre où l'OCR les a lus
@@ -1827,6 +1841,14 @@
                 const detail = blocsMarchesReconstitues.map(b => { const role = detecterRoleBookmaker(b.bookmaker); return `${role ? (BK_NOMS_AFFICHES[role] || b.bookmaker) : b.bookmaker} → ${b.marche}`; }).join(', ');
                 avertissements.push(`🎯 Marché déduit automatiquement (illisible par l'OCR sur cette rangée, l'autre côté indiquait "${blocsMarchesReconstitues[0].marcheSource || '?'}") pour : ${detail}. Vérifie bien ce marché sur ta capture d'origine avant de lancer.`);
                 incertitudesDonnees.push(`Marché déduit pour : ${detail}`);
+            }
+            if (ligueSoftViaAutreBookmaker) {
+                const roleSoftDetecte = blocSoft ? detecterRoleBookmaker(blocSoft.bookmaker) : null;
+                const nomSoft = roleSoftDetecte ? (BK_NOMS_AFFICHES[roleSoftDetecte] || blocSoft.bookmaker) : blocSoft.bookmaker;
+                const roleAutre = detecterRoleBookmaker(premierBlocAvecLigue.bookmaker);
+                const nomAutre = roleAutre ? (BK_NOMS_AFFICHES[roleAutre] || premierBlocAvecLigue.bookmaker) : premierBlocAvecLigue.bookmaker;
+                avertissements.push(`🌐 Ligue non lue par l'OCR côté ${nomSoft} — celle affichée dans le contexte du signal provient de ${nomAutre} à la place. Généralement la même compétition, mais vérifie sur ta capture d'origine avant de lancer.`);
+                incertitudesDonnees.push(`Ligue de ${nomSoft} non lue, celle de ${nomAutre} utilisée à la place`);
             }
             // Edge anormalement élevé : un vrai arbitrage riskless dépasse rarement 5-6%.
             // Un edge à deux chiffres est plus souvent le signe d'un "Middle" (pari asymétrique

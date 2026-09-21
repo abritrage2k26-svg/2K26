@@ -1534,9 +1534,15 @@
                     }
                     // Nettoyage final, quel que soit le chemin emprunté ci-dessus : un
                     // qualificatif de marché ("+OT", "+AP"...) resté collé au nom du match
-                    // (recollage ci-dessus, ou directement présent sur la ligne d'origine)
-                    // n'a rien à faire dans le contexte du signal affiché.
+                    // OU à la ligue (recollage ci-dessus, ou directement présent sur la ligne
+                    // d'origine — ex. "Campeonato Paulista U20. +OT", "Paulista FPB U20 +OT")
+                    // n'a rien à faire dans le contexte du signal affiché ni dans le message
+                    // Telegram : c'est un détail de règlement du marché (prolongations comptées
+                    // ou non), pas une information de match/compétition. Bug réel constaté :
+                    // resté collé à la ligue, "+OT" traversait tel quel jusqu'à l'écran et au
+                    // signal envoyé aux abonnés.
                     bloc.match = bloc.match.replace(/\s*\+[a-zà-öø-ÿ]{1,10}$/i, '').trim();
+                    bloc.ligue = bloc.ligue.replace(/\s*\+[a-zà-öø-ÿ]{1,10}$/i, '').trim();
                     meta.blocs.push(bloc);
                     continue;
                 }
@@ -1558,7 +1564,9 @@
                     && suivante.replace(/[^a-z0-9]/gi, '').length >= 4;
                 if (estNomBk && estLigneMatch && !suivanteEstRangeeUnique) {
                     const bloc = { bookmaker: l, match: suivante.replace(/\s*\+[a-zà-öø-ÿ]{1,10}$/i, '').trim(), ligue: '', marche: '', cote: null };
-                    if (lignes[i + 2] && !/^\d+[.,]\d{2,3}$/.test(lignes[i + 2])) bloc.ligue = lignes[i + 2].replace(/vv/gi, m => m[0] === m[0].toUpperCase() ? 'W' : 'w');
+                    // Même nettoyage du qualificatif "+OT"/"+AP" en fin de ligue que sur le
+                    // format "1 ligne" ci-dessus (voir commentaire associé) — repli "2 lignes".
+                    if (lignes[i + 2] && !/^\d+[.,]\d{2,3}$/.test(lignes[i + 2])) bloc.ligue = lignes[i + 2].replace(/vv/gi, m => m[0] === m[0].toUpperCase() ? 'W' : 'w').replace(/\s*\+[a-zà-öø-ÿ]{1,10}$/i, '').trim();
                     for (let j = i + 2; j <= i + 4 && j < lignes.length; j++) {
                         const mc = lignes[j].match(/^(.{0,15}?)\s*(\d+[.,]\d{2,3})\s*$/);
                         if (mc) { bloc.marche = mc[1].trim(); bloc.cote = parseFloat(mc[2].replace(',', '.')); break; }

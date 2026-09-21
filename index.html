@@ -1186,7 +1186,7 @@
                 // toujours des espaces autour du tiret ("Équipe A - Équipe B"), donc cette
                 // contrainte ne coûte rien sur les vraies lignes de match.
                 const finEntete = lignes.findIndex(l =>
-                    /\S\s+[-–—⇄≠→#]\s+\S/.test(l) && l.replace(/[^a-z0-9]/gi, '').length >= 4
+                    /\S\s+[-–—⇄≠→#&]\s+\S/.test(l) && l.replace(/[^a-z0-9]/gi, '').length >= 4
                 );
                 const lignesEntete = finEntete >= 0 ? lignes.slice(0, finEntete) : lignes;
                 for (const l of lignesEntete) {
@@ -1240,15 +1240,23 @@
                 // par l'OCR (bug réel constaté). Sans cet ajout, la ligne entière échouait le
                 // test "ressemble à une ligne de match" et le bloc n'était JAMAIS créé — aucun
                 // filet de récupération plus loin ne peut compenser un bloc qui n'existe pas.
-                if (rowMatch && ressembleAUnBookmaker && !l.includes('%') && /\S\s*[-–—⇄≠→#]\s*\S/.test(rowMatch[2])) {
+                if (rowMatch && ressembleAUnBookmaker && !l.includes('%') && /\S\s*[-–—⇄≠→#&]\s*\S/.test(rowMatch[2])) {
                     const bookmaker = rowMatch[1];
                     // Normalise la virgule décimale en point AVANT le filtrage de caractères
                     // ci-dessous (qui ne conserve pas la virgule) — sinon "1,57" devient "1 57"
                     // et la cote n'est plus reconnaissable comme un nombre.
-                    let reste = rowMatch[2].replace(/(\d),(\d)/g, '$1.$2').replace(/[^\p{L}\p{N}()°.\-–—⇄≠→#/\s]/gu, ' ').trim();
-                    // Normalise le séparateur "#" (résidu OCR de "⇄"/"≠") vers "-", pour un nom
-                    // de match affiché de façon cohérente avec toutes les autres alertes.
-                    reste = reste.replace(/(\S)\s*#\s*(\S)/, '$1 - $2');
+                    let reste = rowMatch[2].replace(/(\d),(\d)/g, '$1.$2').replace(/[^\p{L}\p{N}()°.\-–—⇄≠→#&/\s]/gu, ' ').trim();
+                    // Normalise le séparateur "#" OU "&" (résidus OCR de "⇄"/"≠", le symbole
+                    // affiché par BreakingBet pour signaler un ordre d'équipes différent entre
+                    // bookmakers) vers "-", pour un nom de match affiché de façon cohérente avec
+                    // toutes les autres alertes. "&" est une nouvelle variante du même résidu
+                    // (alerte réelle Callum Connor - Piero Guaylupo, MMA, bloc PS3838 : "Piero
+                    // Guaylupo & Callum Connor") — sans cet ajout, la ligne entière échouait le
+                    // test "ressemble à une ligne de match" juste au-dessus (aucun des caractères
+                    // reconnus n'était présent) et le bloc PS3838 n'était JAMAIS créé, laissant
+                    // la cote Pinnacle à "0.00" dans le terminal alors qu'elle était bien lisible
+                    // sur la capture.
+                    reste = reste.replace(/(\S)\s*[#&]\s*(\S)/, '$1 - $2');
                     // Retire un qualificatif de compte entre parenthèses juste après le nom du
                     // bookmaker (ex. "1win (pro)", "1win (life)") — ce n'est jamais le début du
                     // nom du match, sinon il contaminerait la traduction du marché ("Handicap
@@ -1587,6 +1595,16 @@
                     // long qui commencerait par ces lettres.
                     bloc.match = bloc.match.replace(/\s*\+[a-zà-öø-ÿ]{1,10}\b/gi, ' ').replace(/\s+/g, ' ').trim();
                     bloc.ligue = bloc.ligue.replace(/\s*\+[a-zà-öø-ÿ]{1,10}\b/gi, ' ').replace(/\s+/g, ' ').trim();
+                    // Même principe pour l'étiquette "different order" — BreakingBet l'affiche
+                    // en italique sous la cote quand ce bookmaker liste les 2 équipes dans
+                    // l'ordre INVERSE de l'autre bookmaker (voir aussi le résidu "#"/"&" ci-
+                    // dessus, qui gère le symbole "⇄" au milieu du nom : ceci gère le LIBELLÉ
+                    // texte qui l'accompagne, collé à la ligue par l'OCR). Alerte réelle Callum
+                    // Connor - Piero Guaylupo (MMA) : "Mixed Martial Arts. UFC different order"
+                    // — ce n'est pas un nom de compétition, juste un avertissement d'ordre
+                    // d'équipes qui n'a rien à faire dans le contexte du signal affiché.
+                    bloc.match = bloc.match.replace(/\s*\b(?:different|same)\s+order\b\s*/gi, ' ').replace(/\s+/g, ' ').trim();
+                    bloc.ligue = bloc.ligue.replace(/\s*\b(?:different|same)\s+order\b\s*/gi, ' ').replace(/\s+/g, ' ').trim();
                     meta.blocs.push(bloc);
                     continue;
                 }

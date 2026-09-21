@@ -1565,8 +1565,18 @@
                     // ou non), pas une information de match/compétition. Bug réel constaté :
                     // resté collé à la ligue, "+OT" traversait tel quel jusqu'à l'écran et au
                     // signal envoyé aux abonnés.
-                    bloc.match = bloc.match.replace(/\s*\+[a-zà-öø-ÿ]{1,10}$/i, '').trim();
-                    bloc.ligue = bloc.ligue.replace(/\s*\+[a-zà-öø-ÿ]{1,10}$/i, '').trim();
+                    // Retrait GLOBAL (partout dans la chaîne), pas seulement en toute fin :
+                    // alerte réelle Mongolia (w) - Malaysia (w) (Basket-ball, +OT) où le
+                    // qualificatif se retrouve collé EN PLEIN MILIEU de la ligue une fois la
+                    // ligue rattachée sur 2 lignes ("...National teams. Asian +OT Games", le
+                    // "+OT" provenant d'une colonne voisine de la carte que l'OCR intercale au
+                    // mauvais endroit) — l'ancienne règle, ancrée en fin de chaîne ($), ne le
+                    // retirait alors jamais, laissant "+OT" traverser jusqu'à l'écran et au
+                    // signal Telegram malgré le correctif précédent. \b après les lettres pour
+                    // ne retirer QUE le token qualificatif isolé, jamais un morceau de mot plus
+                    // long qui commencerait par ces lettres.
+                    bloc.match = bloc.match.replace(/\s*\+[a-zà-öø-ÿ]{1,10}\b/gi, ' ').replace(/\s+/g, ' ').trim();
+                    bloc.ligue = bloc.ligue.replace(/\s*\+[a-zà-öø-ÿ]{1,10}\b/gi, ' ').replace(/\s+/g, ' ').trim();
                     meta.blocs.push(bloc);
                     continue;
                 }
@@ -1587,10 +1597,11 @@
                 const estLigneMatch = /\S\s*[-–—]\s*\S/.test(suivante)
                     && suivante.replace(/[^a-z0-9]/gi, '').length >= 4;
                 if (estNomBk && estLigneMatch && !suivanteEstRangeeUnique) {
-                    const bloc = { bookmaker: l, match: suivante.replace(/\s*\+[a-zà-öø-ÿ]{1,10}$/i, '').trim(), ligue: '', marche: '', cote: null };
-                    // Même nettoyage du qualificatif "+OT"/"+AP" en fin de ligue que sur le
-                    // format "1 ligne" ci-dessus (voir commentaire associé) — repli "2 lignes".
-                    if (lignes[i + 2] && !/^\d+[.,]\d{2,3}$/.test(lignes[i + 2])) bloc.ligue = lignes[i + 2].replace(/vv/gi, m => m[0] === m[0].toUpperCase() ? 'W' : 'w').replace(/\s*\+[a-zà-öø-ÿ]{1,10}$/i, '').trim();
+                    const bloc = { bookmaker: l, match: suivante.replace(/\s*\+[a-zà-öø-ÿ]{1,10}\b/gi, ' ').replace(/\s+/g, ' ').trim(), ligue: '', marche: '', cote: null };
+                    // Même nettoyage GLOBAL (pas seulement en fin de chaîne — voir commentaire
+                    // associé sur le format "1 ligne") du qualificatif "+OT"/"+AP" en ligue,
+                    // repli "2 lignes".
+                    if (lignes[i + 2] && !/^\d+[.,]\d{2,3}$/.test(lignes[i + 2])) bloc.ligue = lignes[i + 2].replace(/vv/gi, m => m[0] === m[0].toUpperCase() ? 'W' : 'w').replace(/\s*\+[a-zà-öø-ÿ]{1,10}\b/gi, ' ').replace(/\s+/g, ' ').trim();
                     for (let j = i + 2; j <= i + 4 && j < lignes.length; j++) {
                         const mc = lignes[j].match(/^(.{0,15}?)\s*(\d+[.,]\d{2,3})\s*$/);
                         if (mc) { bloc.marche = mc[1].trim(); bloc.cote = parseFloat(mc[2].replace(',', '.')); break; }

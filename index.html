@@ -1278,8 +1278,12 @@
                     // à la fréquence du résidu, et aucun nom d'équipe suivi par cette stratégie
                     // ne commence légitimement par un "u" isolé suivi d'un espace puis d'une
                     // majuscule.
-                    reste = reste.replace(/^(?:mi|ki|wi|bi|ui|k|m|w|b|u)[^\x00-\x7F]\s+(?=[A-ZÀ-Ý])/i, '').trim();
-                    reste = reste.replace(/^(?:mi|ki|wi|bi|ui|k|m|w|b|u)\s+(?=[A-ZÀ-Ý])/i, '').trim();
+                    // "gi" est encore une autre variante (alerte réelle Amur Khabarovsk - CSKA
+                    // Moscow, bloc 1xBet) : "gi Amur Khabarovsk - CSKA Moscow" gardait ce "gi"
+                    // parasite en tête du nom, jamais un vrai préfixe de club sur les ligues
+                    // suivies par cette stratégie.
+                    reste = reste.replace(/^(?:mi|ki|wi|bi|ui|gi|k|m|w|b|u)[^\x00-\x7F]\s+(?=[A-ZÀ-Ý])/i, '').trim();
+                    reste = reste.replace(/^(?:mi|ki|wi|bi|ui|gi|k|m|w|b|u)\s+(?=[A-ZÀ-Ý])/i, '').trim();
                     // Autre variante de lecture du même bouton "copier" — cette fois rendu en
                     // caractères non-ASCII plutôt qu'en lettres latines parasites (pas la flèche
                     // de mouvement de cote gérée plus loin en fin de ligne : icône différente,
@@ -1530,6 +1534,20 @@
                             i += 2; // consomme le reste du nom ET la vraie ligue, pas seulement l'un des deux
                         } else {
                             bloc.ligue = suivante.replace(/vv/gi, m => m[0] === m[0].toUpperCase() ? "W" : "w");
+                            // La ligue elle-même peut être coupée par l'OCR sur DEUX lignes quand
+                            // la carte source l'affiche ainsi (ex. "Russia - Kontinental Hockey"
+                            // puis "League" seul juste en dessous, alerte réelle Amur Khabarovsk -
+                            // CSKA Moscow). Bug réel constaté sans ce rattachement : "League"
+                            // restait perdu, la ligue affichée s'arrêtant à "Hockey". On ne
+                            // rattache QUE si la ligne suivante est un seul mot propre (jamais un
+                            // nom de bookmaker, jamais plusieurs mots) — pour ne jamais risquer
+                            // d'avaler le début du bloc bookmaker suivant.
+                            const suiteLigue = (lignes[i + 2] || '').trim();
+                            if (/^[a-zà-öø-ÿ]{2,20}$/i.test(suiteLigue) && !detecterRoleBookmaker(suiteLigue)
+                                && !RE_SHOW_ALL.test(suiteLigue) && !RE_EDGE_HEADER.test(suiteLigue)) {
+                                bloc.ligue = (bloc.ligue + ' ' + suiteLigue).trim();
+                                i += 1; // consomme cette ligne de continuation en plus de `suivante`
+                            }
                         }
                     }
                     // Nettoyage final, quel que soit le chemin emprunté ci-dessus : un

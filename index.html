@@ -677,7 +677,7 @@
                                 <option value="s">✅ GAGNANT SOFT</option>
                                 <option value="p">✅ GAGNANT PINNACLE</option>
                                 <option value="n" id="optionN" class="hidden">✅ GAGNANT CÔTÉ 3</option>
-                                <option value="sauv">🚨 SAUVETAGE EFFECTUÉ</option>
+                                <option value="sauv" id="optionSauv">🚨 SAUVETAGE EFFECTUÉ</option>
                             </select>
                             <button onclick="annulerOperationManuel()" class="bg-slate-800 text-slate-400 border border-slate-700 px-5 py-4 rounded-2xl font-black text-[10px] uppercase hover:bg-red-900/40 hover:text-red-400 hover:border-red-500/30 transition-all">Annuler</button>
                             <button onclick="cloturerCycle()" class="bg-emerald-600 px-10 py-4 rounded-2xl font-black text-[11px] uppercase">Valider</button>
@@ -815,6 +815,14 @@
         let latenceChronoInterval = null;
         let latenceOcrDernierPalier = 0; // palier sonore déjà signalé par demarrerChronoLatenceOcr (voir plus bas)
         let capitalInsuffisantDejaSignale = false; // évite de biper à chaque frappe pendant la saisie (voir signalerCapitalInsuffisantSiNouveau)
+        // Gardes anti-répétition pour les 4 alertes sonores du volet abonné (mêmes principe
+        // que capitalInsuffisantDejaSignale ci-dessus) — ces bandeaux sont recalculés très
+        // souvent (chaque rafraîchissement d'écran, chaque minute via setInterval), donc sans
+        // ces gardes un bip sonner en boucle tant que la situation reste inchangée, au lieu
+        // de biper UNE FOIS à la transition "rien à signaler" → "quelque chose à signaler".
+        let alerteAboRelanceDejaSignalee = false; // "abonné à relancer (J-7)" (voir majBandeauAbonnesRisque)
+        let alerteSauvegardeDejaSignalee = false; // "sauvegarde en retard" (voir majBandeauSauvegarde)
+        let alertePendingDejaSignalee = false; // "opération(s) en attente qui traînent" (voir majBandeauOperationsPending)
         let dernierJourCompteur = null; // date (YYYY-MM-DD) du dernier reset auto de l'objectif quotidien
         let abonnes = []; // Liste des abonnés payants (canal VIP) : {nom, formule, montant, datePaiement, dateExpiration}
         let envoisDifferes = []; // Signaux en attente de publication différée sur le canal gratuit : {texte, envoyerA}
@@ -1004,6 +1012,13 @@
         // "mises pas encore copiées".
         function copiesRequisesPourOp(o) {
             if (!o) return 0;
+            // Pour un SAUVETAGE, m1X/mM ne sont QUE l'affichage informatif de la mise
+            // d'ORIGINE déjà placée lors du pari initial (voir calculerSauvetage — "seule la
+            // nouvelle mise de sauvetage (cible) est déduite") — ce n'est jamais une nouvelle
+            // copie à refaire, contrairement au même champ pour un 'PARI' normal. La seule
+            // action réellement requise est de copier la mise de CIBLE (boxPin) : toujours
+            // exactement 1, quelle que soit la cible (Pinnacle ou l'autre soft).
+            if (o.type === 'SAUVETAGE') return 1;
             return [o.m1X > 0, o.mM > 0].filter(Boolean).length;
         }
 
@@ -1028,6 +1043,14 @@
                 document.getElementById('ledStatus').className = "led-status bg-emerald-500";
                 document.getElementById('btnTauxLock').innerText = '🔓';
             }).catch(() => {
+                // Bug réel trouvé lors de cet audit : `tx` (la variable RÉELLEMENT utilisée par
+                // tous les calculs — mises, wallets, profit) n'était jamais mise à jour ici,
+                // seul l'affichage du champ l'était. Le champ affichait "656" comme si c'était
+                // le taux désormais actif (cohérent avec le toast "repli sur 656 CFA/€"), alors
+                // que l'app continuait en réalité à calculer avec l'ANCIEN taux persisté (ex.
+                // 649 chargé depuis la dernière sauvegarde) — un écart silencieux entre ce qui
+                // est affiché et ce qui est réellement utilisé pour chaque opération.
+                tx = 656;
                 if (input) input.value = 656;
                 document.getElementById('ledStatus').className = "led-status bg-red-500";
                 document.getElementById('ledStatus').title = "Taux hors ligne — repli 656 CFA/€. Vérifie ta connexion ou verrouille un taux manuel.";
@@ -3457,6 +3480,18 @@
             const tStd = document.getElementById('tabStandard');
             const tSauv = document.getElementById('tabSauvetage');
             const zExec = document.getElementById('zoneExec');
+            // Le panneau Sauvetage ne gère qu'UN SEUL côté fixe à recalculer (voir
+            // calculerSauvetage : une seule mise soft, une seule nouvelle cote) — il n'a
+            // aucune notion des 3 côtés séparés d'un arb 3 issues, ni de leurs 3 wallets
+            // potentiellement distincts. Bug réel trouvé lors de cet audit : rien n'empêchait
+            // d'y entrer pendant qu'un op à 3 issues était en cours, et lancer un sauvetage
+            // dans ce cas remplaçait silencieusement cet op par un nouveau SAUVETAGE à 2
+            // issues, perdant toute trace des 2 autres côtés — leur argent restait débité
+            // des wallets pour toujours, sans plus aucune opération pour le restituer.
+            if (mode === 'sauvetage' && op && op.issues === 3) {
+                afficherToast("⚠️ Le sauvetage ne gère pas les arbs 3 issues — résous d'abord cette opération (côté gagnant, ou Annuler) avant d'en lancer une autre.", 'danger');
+                return;
+            }
             if(mode === 'sauvetage') {
                 pStd.classList.add('hidden'); pSauv.classList.remove('hidden');
                 tSauv.classList.add('tab-active'); tSauv.classList.remove('text-slate-500');
@@ -3676,6 +3711,14 @@
         }
 
         function calculerSauvetage() {
+            // Filet défensif supplémentaire (voir le vrai garde-fou dans switchMode, qui
+            // empêche déjà normalement d'atteindre ce panneau pendant un arb 3 issues) : ce
+            // calcul ne gère qu'un seul côté fixe et remplacerait silencieusement `op` par un
+            // SAUVETAGE à 2 issues, perdant la trace des 3 côtés/wallets d'un arb 3 issues.
+            if (op && op.issues === 3) {
+                afficherToast("⚠️ Le sauvetage ne gère pas les arbs 3 issues.", 'danger');
+                return;
+            }
             const cP = lireCote('sauvCoteP');
             if(!cP || cP <= 1) { afficherToast("Saisie invalide — nouvelle cote requise.", 'danger'); return; }
 
@@ -3718,6 +3761,23 @@
             // +1e-6 : absorbe le bruit d'arithmétique flottante (ex: -1.8e-12 au lieu de 0
             // exact) pour qu'un sauvetage parfaitement équilibré affiche bien 0 CFA et non -1.
             const profitSauv  = Math.floor(retourFinal - totalEngage + 1e-6);
+
+            // Garde-fou capital — inexistant jusqu'ici sur ce flux (contrairement au flux
+            // standard, qui désactive le bouton de lancement via fondsInsuffisants) : sans lui,
+            // une mise de sauvetage supérieure au solde réellement disponible sur le wallet
+            // cible faisait simplement passer ce wallet en négatif, silencieusement, sans aucun
+            // avertissement — un chiffre de capital faux pouvait alors fausser une décision
+            // réelle (combien miser ensuite). Calculé AVANT toute mutation de wallet ci-dessous,
+            // en tenant compte de la restitution de la réservation précédente quand elle va vers
+            // le même wallet cible (sinon un recalcul en chaîne légitime serait bloqué à tort).
+            const soldeCibleActuel = bkCible === '1xbet' ? b1X : bkCible === '1win' ? bM : bP;
+            const bkPrecedentCheck = (op && op.miseP_Cfa) ? (op.type === 'SAUVETAGE' ? (op.sauvBkCible || 'pinnacle') : (op.bk2 || 'pinnacle')) : null;
+            const restitutionVersCible = (bkPrecedentCheck === bkCible) ? op.miseP_Cfa : 0;
+            if (soldeCibleActuel + restitutionVersCible < miseP_Cfa) {
+                const nomCible = bkCible === '1xbet' ? '1xBet' : bkCible === '1win' ? '1Win' : 'Pinnacle';
+                afficherToast(`⛔ Capital insuffisant sur ${nomCible} pour cette mise de sauvetage (${Math.round(miseP_Cfa).toLocaleString('fr-FR')} CFA requis).`, 'danger');
+                return;
+            }
 
             // Restituer la réservation de la tentative précédente (op initial 'PARI' ou
             // sauvetage précédent en cas de recalcul en chaîne) : cet argent n'a jamais été
@@ -4314,6 +4374,21 @@
             document.getElementById('btn3I').className = n===3 ? 'px-3 py-1 rounded-lg text-[9px] font-black uppercase border border-purple-500 bg-purple-500/20 text-purple-400' : 'px-3 py-1 rounded-lg text-[9px] font-black uppercase border border-slate-700 bg-slate-800/50 text-slate-500';
             document.getElementById('row3Issues').classList.toggle('hidden', n!==3);
             document.getElementById('optionN').classList.toggle('hidden', n!==3);
+            // "🚨 SAUVETAGE EFFECTUÉ" n'a de sens que pour un PARI/SAUVETAGE à 2 issues — le
+            // panneau de sauvetage (calculerSauvetage) ne s'applique jamais à un arb 3 issues
+            // (SAUVETAGE crée toujours issues:2, voir lancerSauvetage), et cloturerCycle/
+            // resolvPending n'ont aucune logique pour ce choix sur un op à 3 côtés. Bug réel
+            // constaté : cette option restait visible et sélectionnable même en mode 3 issues,
+            // et la choisir était silencieusement traité comme "côté 3 gagnant" par
+            // cloturerCycle (même branche que 'n', faute de correspondre à 's' ou 'p') —
+            // créditant un wallet sans rapport avec un vrai sauvetage. Masquée ici, comme
+            // optionN l'est déjà pour le mode 2 issues.
+            const optSauv = document.getElementById('optionSauv');
+            if (optSauv) {
+                optSauv.classList.toggle('hidden', n===3);
+                const champGagnant = document.getElementById('gagnant');
+                if (n===3 && champGagnant && champGagnant.value === 'sauv') champGagnant.value = 'wait';
+            }
             if(n===2) reinitialiserLabelsGagnant();
             validerProfitMin();
         }
@@ -4672,7 +4747,14 @@
             if(type==='1X') document.getElementById('res1X').className = "text-4xl font-mono font-black text-emerald-500 italic";
             if(type==='M')  document.getElementById('resM').className  = "text-4xl font-mono font-black text-emerald-500 italic";
             if(type==='N')  document.getElementById('resN').className  = "text-4xl font-mono font-black text-emerald-400 italic";
-            copiesSoftEffectuees++;
+            // Pour un SAUVETAGE, cette boîte (#div1X/#divM) n'affiche QUE la mise d'ORIGINE
+            // déjà placée lors du pari initial — un simple rappel informatif, jamais une
+            // nouvelle copie à faire (voir copiesRequisesPourOp). La compter ici ferait
+            // passer le timer d'exécution en vert dès ce clic "de mémoire", alors que la
+            // vraie action urgente d'un sauvetage — copier la mise de CIBLE (boxPin) — n'a
+            // peut-être même pas encore eu lieu. Seul copierMontant('pin') la compte pour un
+            // SAUVETAGE (voir plus bas).
+            if (op.type !== 'SAUVETAGE') copiesSoftEffectuees++;
             // Copies requises = nombre réel de wallets softs utilisés dans l'opération
             // (0, 1 ou 2 selon les bookmakers assignés — fonctionne pour 2 et 3 issues) —
             // centralisé dans copiesRequisesPourOp, réutilisé aussi par le timer d'exécution.
@@ -4703,12 +4785,33 @@
                 if(cible == null) return;
                 navigator.clipboard.writeText(cible === 'pinnacle' ? op.miseP_Eur : op.miseP_Cfa);
                 document.getElementById('boxPin').classList.add('success-copy');
+                // Pour un SAUVETAGE, CETTE copie (la mise de cible) est la seule action
+                // réellement requise (voir copiesRequisesPourOp) — bug réel trouvé en
+                // construisant les alertes de latence : sans cette ligne, le timer
+                // d'exécution restait bloqué en escalade (orange/rouge/bip) indéfiniment
+                // après un sauvetage, même une fois la mise de cible copiée et placée, car
+                // rien n'incrémentait jamais copiesSoftEffectuees pour cette action. Jamais
+                // comptée pour un 'PARI'/3-issues classique, où ce comptage reste réservé aux
+                // boîtes softs (comportement existant, inchangé).
+                if (op.type === 'SAUVETAGE') {
+                    copiesSoftEffectuees++;
+                    majAffichageTimer();
+                }
             }
         }
         
-        function cloturerCycle() { 
-            if(!op) return; 
+        function cloturerCycle() {
+            if(!op) return;
             const choice = document.getElementById('gagnant').value;
+            // Filet défensif — "sauv" n'a aucun sens pour un op à 3 issues (voir le correctif
+            // dans setIssues, qui masque déjà cette option du menu dans ce cas) : sans ce
+            // garde-fou, un 'choice' resté sur "sauv" (ex. sélectionné juste avant de rebasculer
+            // en 3 issues) serait silencieusement traité comme "côté 3 gagnant" ci-dessous,
+            // faute de correspondre à 's' ou 'p'.
+            if (op.issues === 3 && choice === 'sauv') {
+                afficherToast("⚠️ « Sauvetage effectué » n'existe pas pour un arb 3 issues — choisis le côté réellement gagnant.", 'danger');
+                return;
+            }
             const totalEngage = (op.issues===3 && op.sides3)
                 ? op.sides3.reduce((s, x) => s + (x.cfa||0), 0)
                 // miseP_Cfa n'est à ADDITIONNER que si le côté droit est Pinnacle POUR UN
@@ -5138,16 +5241,47 @@
         // pour un 'PARI', op.m1X/op.mM contiennent DÉJÀ la mise du côté fixe (bkFixe) quand
         // c'est un soft (voir création de l'opération), donc rien à ajouter en plus pour
         // Pinnacle dans ce cas — l'ajouter aurait fabriqué de l'argent fictif sur un wallet
-        // jamais débité. Pour un 'SAUVETAGE', c'est l'inverse : m1X/mM ne contiennent QUE la
-        // mise d'ORIGINE (jamais celle de la cible), donc la mise de cible doit TOUJOURS être
-        // restituée en plus, dans le bon wallet (sauvBkCible). Bug réel constaté sans cette
-        // distinction : annuler un arb 100% entre softs créditait Pinnacle de la mise du
-        // second soft, sans jamais la retirer du vrai wallet débité.
+        // jamais débité.
+        //
+        // Pour un 'SAUVETAGE', le traitement est RADICALEMENT différent, pas juste "l'inverse"
+        // comme le disait l'ancien commentaire ici : m1X/mM d'un sauvetage ne sont QUE
+        // l'affichage informatif de la mise d'ORIGINE — un pari RÉELLEMENT déjà placé lors de
+        // l'opération initiale (voir calculerSauvetage : "les mises soft sont déjà déduites
+        // lors de l'opération initiale — seule la nouvelle mise de sauvetage (cible) est
+        // déduite"), jamais une réservation propre à CETTE tentative de sauvetage. Annuler ou
+        // laisser expirer le sauvetage ne "dé-place" pas ce pari d'origine dans la vraie vie —
+        // seule la mise de CIBLE (encore une simple réservation, jamais placée chez le
+        // bookmaker) doit être restituée. Bug réel trouvé lors de cet audit : cette fonction
+        // créditait AUSSI op.m1X/op.mM pour un sauvetage annulé/expiré, fabriquant à chaque
+        // fois de l'argent fictif équivalent à la mise d'origine déjà engagée ailleurs.
         function restituerFondsAnnulation(op) {
-            const bkCible = op.type === 'SAUVETAGE' ? (op.sauvBkCible || 'pinnacle') : (op.bk2 || 'pinnacle');
-            b1X += (op.m1X||0) + (op.type === 'SAUVETAGE' && bkCible === '1xbet' ? (op.miseP_Cfa||0) : 0);
-            bM  += (op.mM||0)  + (op.type === 'SAUVETAGE' && bkCible === '1win'  ? (op.miseP_Cfa||0) : 0);
-            bP  += (bkCible === 'pinnacle' ? (op.miseP_Cfa||0) : 0);
+            if (op.type === 'SAUVETAGE') {
+                const bkCible = op.sauvBkCible || 'pinnacle';
+                if (bkCible === '1xbet') b1X += (op.miseP_Cfa||0);
+                else if (bkCible === '1win') bM += (op.miseP_Cfa||0);
+                else bP += (op.miseP_Cfa||0);
+                return;
+            }
+            b1X += (op.m1X||0);
+            bM  += (op.mM||0);
+            // Pinnacle : selon le nombre d'issues, op.miseP_Cfa ne veut pas dire la même
+            // chose. Pour un 3 issues, c'est déjà l'agrégat des SEULS côtés assignés à
+            // Pinnacle (jamais les mêmes CFA que dans agg1X/aggM, voir lancerArbitrage) —
+            // toujours sûr à restituer tel quel (y compris 0 si aucun côté n'est sur
+            // Pinnacle). Pour un PARI à 2 issues, miseP_Cfa est en revanche TOUJOURS défini
+            // (même quand bkFixe est un autre soft) et déjà compté dans mM/m1X dans ce cas :
+            // ne le restituer en plus QUE si bkFixe (op.bk2) est réellement 'pinnacle', sous
+            // peine de fabriquer de l'argent fictif sur bP pour un arb 100% entre softs.
+            // Bug réel trouvé lors de cet audit : le test se basait auparavant sur op.bk2
+            // MÊME en 3 issues, où bk2 ne signifie que "bookmaker du côté 2" — sans rapport
+            // avec la présence réelle de Pinnacle sur les côtés 1 ou 3. Un 3 issues avec
+            // Pinnacle sur le côté 1 ou 3 mais pas le 2 ne restituait alors JAMAIS bP à
+            // l'annulation/expiration, perdant silencieusement le suivi du capital engagé.
+            if (op.issues === 3) {
+                bP += (op.miseP_Cfa||0);
+            } else if ((op.bk2 || 'pinnacle') === 'pinnacle') {
+                bP += (op.miseP_Cfa||0);
+            }
         }
         function annulerOperationExpired() {
             if(!op) return;
@@ -5262,7 +5396,22 @@
             document.getElementById('resN').className = "text-4xl font-mono font-black text-purple-400";
             document.getElementById('labelN').innerText = '3. MISE NUL';
             document.getElementById('labelPin').innerText = '3. MISE PINNACLE (€)';
-            document.getElementById('boxPin').classList.remove('locked-pin');
+            // Réévalue le verrou plutôt que de déverrouiller inconditionnellement — bug réel
+            // trouvé lors de cet audit : copiesSoftEffectuees n'est JAMAIS persisté (voir
+            // construireEtatComplet) et repart donc toujours à 0 après un rechargement de
+            // page, alors que cette ligne déverrouillait quand même systématiquement la
+            // boîte Pinnacle, même pour un PARI/3-issues dont les mises softs n'ont pas
+            // encore été recopiées DEPUIS ce rechargement — exactement le bug "clic and
+            // copy" déjà corrigé pour le flux normal (voir copierIndiv), mais réintroduit
+            // ici par un simple F5. Un SAUVETAGE, lui, reste toujours déverrouillé d'entrée
+            // (même principe que dans calculerSauvetage : la mise d'origine est déjà
+            // placée, rien à attendre avant de copier la cible).
+            const boxPinRestaure = document.getElementById('boxPin');
+            if (op.type === 'SAUVETAGE' || bkCibleBoitePinnacle() == null || copiesRequisesPourOp(op) === 0) {
+                boxPinRestaure.classList.remove('locked-pin');
+            } else {
+                boxPinRestaure.classList.add('locked-pin');
+            }
             document.getElementById('resProfit').className = "text-4xl font-black text-emerald-400";
 
             const badge = document.getElementById('migrationBadge');
@@ -5626,6 +5775,7 @@
             a.dateExpiration = base.toISOString().slice(0, 10);
             a.datePaiement = new Date().toISOString().slice(0, 10);
             a.retirePartout = false; // un renouvellement annule un éventuel retrait déjà effectué
+            a.alerteRetraitEchecSignalee = false; // réarme l'alerte sonore pour une future expiration
             enregistrerRevenu(a.montant);
             sauvegarder();
             rafraichirAbonnes();
@@ -5638,6 +5788,7 @@
             abonnes[index].retirePartout = false; // toute nouvelle date = à réévaluer, sinon une
                                                     // expiration déjà signalée une fois ne serait
                                                     // plus jamais re-signalée après modification.
+            abonnes[index].alerteRetraitEchecSignalee = false; // même raison, pour l'alerte sonore
             sauvegarder();
             rafraichirAbonnes();
         }
@@ -5689,9 +5840,17 @@
                         a.retirePartout = true;
                         afficherToast(`🚪 ${a.nom} retiré automatiquement du canal VIP (abonnement expiré).`, 'info');
                     } else {
+                        // Échec auto : contrairement aux deux autres cas ci-dessus, a.retirePartout
+                        // reste false volontairement (on retente à la prochaine vérification, voir
+                        // commentaire de fonction) — donc CETTE branche repasse ici toutes les 60s
+                        // tant que le retrait manuel n'a pas été fait. Sans garde dédiée, le bip
+                        // sonnerait en boucle chaque minute ; a.alerteRetraitEchecSignalee (réarmé
+                        // par renouvelerAbonne/modifierExpirationAbonne) le limite à une seule fois.
+                        if (!a.alerteRetraitEchecSignalee) { jouerBip(300, 250); a.alerteRetraitEchecSignalee = true; }
                         afficherToast(`⚠️ Retrait auto impossible pour ${a.nom} : ${res.error}. Retire-le manuellement.`, 'danger');
                     }
                 } else {
+                    jouerBip(300, 250);
                     afficherToast(`⏰ ${a.nom} a expiré — retire-le manuellement du canal VIP (ID Telegram non enregistré).`, 'danger');
                     a.retirePartout = true; // évite de re-notifier en boucle toutes les minutes
                 }
@@ -5788,6 +5947,13 @@
                 return;
             }
             const { aRelancer, expires } = verifierAbonnesARisque();
+            // Bip UNIQUEMENT à la transition "aucun abonné à relancer" → "au moins un" — les
+            // abonnés déjà EXPIRÉS ont leur propre alerte sonore, au moment du retrait VIP
+            // (voir verifierRetraitsExpires), donc pas doublée ici. Réarmée dès que la liste
+            // "à relancer" repasse à zéro (relances toutes traitées), pour qu'un futur abonné
+            // qui entre dans cette fenêtre re-déclenche bien un bip.
+            if (aRelancer.length > 0 && !alerteAboRelanceDejaSignalee) jouerBip(500, 150);
+            alerteAboRelanceDejaSignalee = aRelancer.length > 0;
             if (aRelancer.length === 0 && expires.length === 0) { bandeau.classList.add('hidden'); return; }
             const parties = [];
             if (aRelancer.length) parties.push(`${aRelancer.length} à relancer`);
@@ -5817,6 +5983,13 @@
                 return;
             }
             const jours = joursDepuisDernierExport();
+            const doitAlerter = jours === null || jours >= SEUIL_JOURS_SAUVEGARDE;
+            // Bip uniquement à la transition "pas encore en retard" → "en retard" — jamais à
+            // chaque rafraîchissement tant que la situation reste inchangée (voir le principe
+            // déjà établi pour capitalInsuffisantDejaSignale). Réarmé après un export (voir
+            // exporterEtat, qui remet dernierExportEffectue à jour et donc `jours` à 0).
+            if (doitAlerter && !alerteSauvegardeDejaSignalee) jouerBip(500, 150);
+            alerteSauvegardeDejaSignalee = doitAlerter;
             if (jours === null) {
                 document.getElementById('bandeauSauvegardeTexte').innerText = "💾 Aucune sauvegarde exportée pour l'instant — pense à exporter au moins une fois.";
                 bandeau.classList.remove('hidden');
@@ -5838,6 +6011,12 @@
             const bandeau = document.getElementById('bandeauOperationsPending');
             if (!bandeau) return;
             const enAttente = hist.filter(h => h.status === 'PENDING').length;
+            // Bip uniquement à la transition "aucune opération en attente" → "au moins une" —
+            // ce bandeau étant recalculé à chaque rafraîchissement de la vue d'ensemble (donc
+            // très souvent), biper à chaque appel tant qu'il en reste au moins une ferait sonner
+            // en boucle. Réarmé dès que toutes les opérations en attente sont résolues.
+            if (enAttente > 0 && !alertePendingDejaSignalee) jouerBip(500, 150);
+            alertePendingDejaSignalee = enAttente > 0;
             if (enAttente > 0) {
                 document.getElementById('bandeauOperationsPendingTexte').innerText = `⏳ ${enAttente} opération${enAttente > 1 ? 's' : ''} non résolue${enAttente > 1 ? 's' : ''} dans le journal.`;
                 bandeau.classList.remove('hidden');

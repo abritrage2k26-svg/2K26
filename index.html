@@ -4411,6 +4411,28 @@
             startTimer();
         }
 
+        // Détermine à quel bookmaker la 3ème boîte ("boxPin") correspond RÉELLEMENT pour
+        // l'opération en cours, tous types confondus — nécessaire car ce champ ne s'appelle
+        // pas pareil selon le type d'opération, ET la sémantique de la boîte diffère aussi
+        // selon le type :
+        //  - PARI standard (2 issues) : la boîte n'affiche une vraie valeur QUE si bkFixe
+        //    (op.bk2) est réellement 'pinnacle' — sinon elle affiche explicitement
+        //    "PINNACLE NON UTILISÉ" / "0.00" (voir lancerArbitrage), donc rien à copier.
+        //  - SAUVETAGE : la boîte affiche TOUJOURS un vrai montant (la mise de protection
+        //    réellement placée), que la cible soit Pinnacle OU l'autre soft (op.sauvBkCible)
+        //    — bug réel constaté : le code copiait auparavant TOUJOURS op.miseP_Eur même
+        //    quand la cible était un soft en CFA, car `op.bk2` — inexistant sur un objet
+        //    SAUVETAGE — retombait silencieusement sur 'pinnacle' via `op.bk2 || 'pinnacle'`.
+        //  - 3 issues flexibles : cette boîte n'alimente jamais qu'un agrégat Pinnacle en
+        //    euros (voir la branche 3 issues de lancerArbitrage), jamais un soft.
+        // Renvoie null si la boîte n'a AUCUNE vraie cible dans cette opération (arb 100%
+        // entre softs, "PINNACLE NON UTILISÉ").
+        function bkCibleBoitePinnacle() {
+            if(!op) return null;
+            if(op.type === 'SAUVETAGE') return op.sauvBkCible || 'pinnacle';
+            if(op.issues === 3) return (Array.isArray(op.sides3) && op.sides3.some(s => s.bk === 'pinnacle')) ? 'pinnacle' : null;
+            return op.bk2 === 'pinnacle' ? 'pinnacle' : null;
+        }
         function copierIndiv(type) {
             if(!op) return;
             const val = type==='1X' ? op.m1X : type==='M' ? op.mM : op.mN;
@@ -4422,11 +4444,31 @@
             // Copies requises = nombre réel de wallets softs utilisés dans l'opération
             // (0, 1 ou 2 selon les bookmakers assignés — fonctionne pour 2 et 3 issues)
             const copiesRequises = [op.m1X > 0, op.mM > 0].filter(Boolean).length;
-            if(copiesSoftEffectuees >= copiesRequises) {
+            // La boîte Pinnacle ne doit JAMAIS se déverrouiller s'il n'y a réellement rien à y
+            // copier. Bug réel constaté (arb 100% entre softs, 1win vs 1xbet, bkFixe='1xbet') :
+            // une fois les deux mises softs copiées, cette boîte — pourtant étiquetée "PINNACLE
+            // NON UTILISÉ" et grisée — se déverrouillait quand même, et un clic dessus copiait
+            // dans le presse-papiers un montant résiduel (op.miseP_Eur/miseP_Cfa, qui ne
+            // représente JAMAIS Pinnacle ici mais la mise de l'autre soft) alors qu'aucune
+            // jambe Pinnacle n'existe dans cette opération.
+            if(copiesSoftEffectuees >= copiesRequises && bkCibleBoitePinnacle() != null) {
                 document.getElementById('boxPin').classList.remove('locked-pin');
             }
         }
-        function copierMontant(t) { if(t === 'pin') { navigator.clipboard.writeText((op.bk2||'pinnacle')==='pinnacle' ? op.miseP_Eur : op.miseP_Cfa); document.getElementById('boxPin').classList.add('success-copy'); } }
+        function copierMontant(t) {
+            if(t === 'pin') {
+                if(!op) return;
+                // Filet défensif supplémentaire (voir le correctif dans copierIndiv pour le
+                // verrou principal) : jamais de copie tant qu'il n'y a pas de vraie cible pour
+                // cette 3ème boîte, quelle que soit la façon dont elle a pu se retrouver
+                // déverrouillée — et copie le BON montant dans la BONNE devise selon cette
+                // cible réelle (euros pour Pinnacle, CFA pour un soft en sauvetage).
+                const cible = bkCibleBoitePinnacle();
+                if(cible == null) return;
+                navigator.clipboard.writeText(cible === 'pinnacle' ? op.miseP_Eur : op.miseP_Cfa);
+                document.getElementById('boxPin').classList.add('success-copy');
+            }
+        }
         
         function cloturerCycle() { 
             if(!op) return; 

@@ -410,6 +410,7 @@
                     <div>
                         <p class="text-[10px] font-black text-emerald-500 uppercase tracking-widest italic">📋 Coller une alerte BreakingBet ici (Ctrl+V)</p>
                         <p id="ocrStatus" class="text-[9px] text-slate-500 font-black uppercase italic mt-1">En attente d'une capture...</p>
+                        <p id="latenceOcrChrono" class="hidden text-[9px] font-black uppercase italic mt-1"></p>
                     </div>
                     <button type="button" onclick="event.stopPropagation(); collerDepuisBouton()" class="bg-emerald-600/20 text-emerald-400 border border-emerald-500/40 px-4 py-2 rounded-xl text-[9px] font-black uppercase not-italic hover:bg-emerald-600/30 transition-all">📋 Coller</button>
                     <img id="ocrPreview" class="hidden h-16 rounded-lg border border-white/10 object-cover">
@@ -795,6 +796,25 @@
         // profit réel après arrondi tombe sous cette fraction du profit théorique
         // (cotes brutes, sans arrondi), on prévient avant de lancer.
         const SEUIL_ALERTE_ARRONDI = 0.5;
+        // Seuils de la latence de diffusion PENDANT la préparation d'une opération (entre le
+        // collage de l'alerte OCR et le clic sur "Lancer") — demandés explicitement par
+        // l'utilisateur ("discutons-en d'abord"), calés sur les mêmes paliers déjà utilisés
+        // pour le graphique historique (30s/60s), avec un 3ème palier bloquant : au-delà, la
+        // cote a de bonnes chances d'avoir déjà bougé ou d'être limitée chez le bookmaker,
+        // donc on force une confirmation explicite avant tout débit réel — même principe que
+        // le garde-fou "données incertaines" juste au-dessus dans lancerArbitrage.
+        const SEUIL_LATENCE_OCR_ORANGE_MS = 30000;
+        const SEUIL_LATENCE_OCR_ROUGE_MS = 60000;
+        const SEUIL_LATENCE_OCR_BLOQUANTE_MS = 90000;
+        // Seuils du timer d'exécution (60s, après le clic "Lancer", tant que les mises softs
+        // n'ont pas toutes été copiées) — escalade visuelle ET sonore avant l'annulation
+        // automatique à 0s, pour ne jamais découvrir l'expiration après coup.
+        const SEUIL_TIMER_ORANGE_S = 30;
+        const SEUIL_TIMER_ROUGE_S = 20;
+        const SEUIL_TIMER_CRITIQUE_S = 10;
+        let latenceChronoInterval = null;
+        let latenceOcrDernierPalier = 0; // palier sonore déjà signalé par demarrerChronoLatenceOcr (voir plus bas)
+        let capitalInsuffisantDejaSignale = false; // évite de biper à chaque frappe pendant la saisie (voir signalerCapitalInsuffisantSiNouveau)
         let dernierJourCompteur = null; // date (YYYY-MM-DD) du dernier reset auto de l'objectif quotidien
         let abonnes = []; // Liste des abonnés payants (canal VIP) : {nom, formule, montant, datePaiement, dateExpiration}
         let envoisDifferes = []; // Signaux en attente de publication différée sur le canal gratuit : {texte, envoyerA}
@@ -876,6 +896,115 @@
                 el.classList.add('toast-out');
                 setTimeout(() => el.remove(), 300);
             }, 5000);
+        }
+
+        // Bip généré en Web Audio (pas de fichier externe à charger) pour l'escalade sonore
+        // de la latence de diffusion (voir SEUIL_TIMER_*/SEUIL_LATENCE_OCR_*) — jamais
+        // bloquant : silencieux si l'API est absente (ex. jsdom en test) ou si l'appel échoue
+        // pour une raison quelconque (contexte audio non démarré faute d'interaction
+        // utilisateur, onglet en arrière-plan sur certains navigateurs...).
+        function jouerBip(frequence, dureeMs) {
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+                if (!window.__bagpasAudioCtx) window.__bagpasAudioCtx = new AudioCtx();
+                const ctx = window.__bagpasAudioCtx;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.frequency.value = frequence;
+                osc.type = 'sine';
+                gain.gain.value = 0.15;
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + dureeMs / 1000);
+            } catch (e) { /* le son n'est qu'un plus, jamais bloquant pour le flux principal */ }
+        }
+
+        // Bip UNE SEULE FOIS à la transition "capital suffisant" → "capital insuffisant" —
+        // jamais à chaque frappe pendant la saisie (validerProfitMin() tourne en continu sur
+        // chaque cote/mise tapée, ce qui biperait en rafale sans ce garde-fou). Se réarme dès
+        // que le capital redevient suffisant, pour re-biper si l'opérateur retombe ensuite en
+        // dessous (ex. après avoir augmenté la mise par erreur).
+        function signalerCapitalInsuffisantSiNouveau(estInsuffisant) {
+            if (estInsuffisant && !capitalInsuffisantDejaSignale) {
+                jouerBip(220, 250);
+            }
+            capitalInsuffisantDejaSignale = estInsuffisant;
+        }
+
+        // Chrono de latence PENDANT LA PRÉPARATION d'une opération (entre le collage de
+        // l'alerte OCR et le clic sur "Lancer") — demandé explicitement par l'utilisateur.
+        // Démarre dans appliquerAlerteMeta (dès qu'une alerte est lue), s'arrête dans
+        // lancerArbitrage (l'opération existe alors, c'est le timer d'exécution — startTimer —
+        // qui prend le relais pour la suite, pas ce chrono-ci) et dans resetTotalSystem.
+        // Seuils (voir SEUIL_LATENCE_OCR_*) calés sur ceux déjà utilisés par le graphique
+        // historique de latence (30s/60s), avec un 3ème palier bloquant à 90s : au-delà, une
+        // confirmation explicite est forcée dans lancerArbitrage avant tout débit réel.
+        // Extrait dans sa propre fonction nommée (plutôt qu'une closure anonyme interne à
+        // demarrerChronoLatenceOcr) pour rester testable directement, même principe déjà
+        // appliqué à majAffichageTimer pour le timer d'exécution.
+        function majChronoLatenceOcr() {
+            const el = document.getElementById('latenceOcrChrono');
+            if (!el) return;
+            if (!alerteMeta || !alerteMeta.captureTs) { el.classList.add('hidden'); return; }
+            const ecouleMs = Date.now() - alerteMeta.captureTs;
+            const s = Math.floor(ecouleMs / 1000);
+            el.classList.remove('hidden');
+            let palier;
+            if (ecouleMs <= SEUIL_LATENCE_OCR_ORANGE_MS) {
+                palier = 0;
+                el.className = 'text-[9px] font-black uppercase italic mt-1 text-emerald-500';
+                el.innerText = `🟢 ${s}s depuis l'alerte`;
+            } else if (ecouleMs <= SEUIL_LATENCE_OCR_ROUGE_MS) {
+                palier = 1;
+                el.className = 'text-[9px] font-black uppercase italic mt-1 text-amber-400';
+                el.innerText = `🟠 ${s}s depuis l'alerte — lance vite`;
+            } else if (ecouleMs <= SEUIL_LATENCE_OCR_BLOQUANTE_MS) {
+                palier = 2;
+                el.className = 'text-[9px] font-black uppercase italic mt-1 text-red-400';
+                el.innerText = `🔴 ${s}s depuis l'alerte — edge probablement dégradé`;
+            } else {
+                palier = 3;
+                el.className = 'text-[9px] font-black uppercase italic mt-1 text-red-500 animate-pulse';
+                el.innerText = `⛔ ${s}s depuis l'alerte — confirmation requise pour lancer`;
+            }
+            // Bip distinct du visuel à CHAQUE nouveau palier franchi (jamais en répétition
+            // tant qu'on reste dans le même palier) — demandé explicitement par l'utilisateur :
+            // un simple changement de couleur peut passer inaperçu si l'écran n'est pas
+            // regardé en continu pendant la préparation.
+            if (palier > latenceOcrDernierPalier) {
+                jouerBip(440 + palier * 110, 200);
+                latenceOcrDernierPalier = palier;
+            }
+        }
+        function demarrerChronoLatenceOcr() {
+            clearInterval(latenceChronoInterval);
+            const el = document.getElementById('latenceOcrChrono');
+            if (!el) return;
+            // Palier sonore déjà signalé (0=vert, 1=orange, 2=rouge, 3=bloquant) — remis à 0 à
+            // chaque démarrage frais, pour ne biper qu'UNE SEULE FOIS par franchissement de
+            // palier (jamais en boucle tant qu'on reste dans le même palier, contrairement au
+            // visuel qui se réévalue chaque seconde).
+            latenceOcrDernierPalier = 0;
+            majChronoLatenceOcr();
+            latenceChronoInterval = setInterval(majChronoLatenceOcr, 1000);
+        }
+        function arreterChronoLatenceOcr() {
+            clearInterval(latenceChronoInterval);
+            latenceChronoInterval = null;
+            const el = document.getElementById('latenceOcrChrono');
+            if (el) { el.classList.add('hidden'); el.innerText = ''; }
+        }
+
+        // Nombre de copies softs requises pour une opération donnée (0, 1 ou 2 selon les
+        // bookmakers réellement assignés) — centralisé ici et réutilisé par copierIndiv (verrou
+        // de la boîte Pinnacle) et par le timer d'exécution (majAffichageTimer, escalade
+        // visuelle/sonore), pour que les deux ne divergent jamais sur ce qui compte comme
+        // "mises pas encore copiées".
+        function copiesRequisesPourOp(o) {
+            if (!o) return 0;
+            return [o.m1X > 0, o.mM > 0].filter(Boolean).length;
         }
 
         // ══════════════════════════════════════════════════════════════════
@@ -1804,6 +1933,14 @@
             // une cote exploitable ou une cote déjà bougée.
             meta.captureTs = Date.now();
             alerteMeta = meta;
+            // Bip court dès qu'une nouvelle alerte OCR est appliquée — un des événements
+            // sonores demandés explicitement par l'utilisateur (au-delà du compte à rebours),
+            // utile si l'écran n'est pas regardé au moment précis du collage.
+            jouerBip(750, 100);
+            // Démarre le chrono de latence visible à l'écran (voir demarrerChronoLatenceOcr) —
+            // tant que l'opération n'est pas lancée, l'opérateur voit en continu depuis combien
+            // de temps cette alerte traîne, pas seulement après coup dans le graphique.
+            demarrerChronoLatenceOcr();
             const nb = meta.blocs.length;
             let cotesUtilisees = []; // pour le contrôle de cohérence edge annoncé vs edge calculé
 
@@ -1937,12 +2074,21 @@
                             incertitudesDonnees.push(`Edge annoncé corrigé par l'OCR : "${meta.edgePct}%" → "${tronque}%"`);
                             meta.edgePct = tronque;
                             edgeAnnonce = edgeTronque;
+                            // Bip d'alerte — un des événements sonores demandés explicitement :
+                            // une correction automatique mérite d'être remarquée, pas seulement
+                            // lue en petit dans le résumé.
+                            jouerBip(400, 200);
                         }
                     }
                 }
                 if (!isNaN(edgeAnnonce) && Math.abs(edgeCalcule - edgeAnnonce) > 1.5) {
                     avertissements.push(`⚠️ Écart suspect : edge annoncé par l'alerte ${edgeAnnonce}%, mais edge calculé à partir des cotes lues ${edgeCalcule.toFixed(2)}% — une cote a probablement été mal lue, vérifie avant de lancer.`);
                     incertitudesDonnees.push(`Écart edge annoncé (${edgeAnnonce}%) vs calculé (${edgeCalcule.toFixed(2)}%)`);
+                    // Bip d'alerte — un écart suspect est plus grave qu'une simple correction
+                    // OCR (la cote elle-même est probablement fausse), même tonalité que la
+                    // correction ci-dessus pour rester cohérent (les deux sont regroupés côté
+                    // utilisateur sous "Écart suspect / edge corrigé").
+                    jouerBip(400, 200);
                 }
             }
             if (meta.marcheGlobal && !/^(1x2|match|winner|résultat|full ?time)$/i.test(meta.marcheGlobal)) {
@@ -2882,6 +3028,18 @@
             return null;
         }
 
+        // Bookmaker généralisé du "côté droit" d'une entrée du journal (h) — op.bk2 pour un
+        // 'PARI', op.sauvBkCible pour un 'SAUVETAGE' (même généralisation déjà appliquée dans
+        // nomCampGagnant/cloturerCycle/resolvPending). Centralisée ici et réutilisée par
+        // l'affichage du tableau journal et des boutons de résolution "en attente" — bug réel
+        // constaté sans elle : ces deux affichages ne lisaient QUE h.bk2 (toujours absent sur
+        // un objet SAUVETAGE), donc un sauvetage EN ATTENTE vers l'autre soft affichait un
+        // bouton "PIN" et un montant en euros dans le journal, alors qu'aucune jambe Pinnacle
+        // n'était impliquée — la vraie cible (sauvBkCible) et sa devise (CFA) étaient ignorées.
+        function bkDroitJournal(h) {
+            return h.type === 'SAUVETAGE' ? (h.sauvBkCible || 'pinnacle') : (h.bk2 || 'pinnacle');
+        }
+
         function construireMessageCloture(h) {
             const estSauvetage = h.type === 'SAUVETAGE';
             const gagne = (h.pCfa || 0) > 0;
@@ -3408,11 +3566,33 @@
                 document.getElementById('zoneExec').classList.add('hidden');
                 document.getElementById('divN').classList.add('hidden');
 
+                // Alerte OCR collée mais jamais lancée (chrono de latence en cours) — trouvé
+                // lors du même audit que le bug bkFixe/sauvBkCible ci-dessous : sans ce
+                // nettoyage, une alerte pas encore lancée restait affichée (résumé, aperçu,
+                // chrono qui continue de tourner) après un "Réinitialiser TOUT", alors que le
+                // bouton annonce un système "entièrement" réinitialisé.
+                alerteMeta = null;
+                arreterChronoLatenceOcr();
+                document.getElementById('ocrResume').innerHTML = '';
+                document.getElementById('ocrPreview').classList.add('hidden');
+                document.getElementById('ocrStatus').innerText = "En attente d'une capture...";
+                document.getElementById('ocrStatus').className = "text-[9px] text-slate-500 font-black uppercase italic mt-1";
+
                 // Réinitialiser aussi l'état du calculateur en cours (issues, softs, bookmakers)
                 softSelected = null;
                 bkSel[1] = null; bkSel[2] = null; bkSel[3] = null;
                 document.querySelectorAll('.btn-soft, .bk-btn').forEach(b => { b.classList.remove('active'); b.style.opacity = ''; b.style.borderWidth = ''; });
                 setIssues(2);
+                // bkFixe/sauvBkCible (côté fixe du calculateur, cible du sauvetage) — oubliés
+                // par les versions précédentes de ce bouton, comme cotes/mise avant eux : sans
+                // ce reset, un arb 100% entre softs lancé juste avant "Réinitialiser TOUT"
+                // laissait bkFixe sur '1xbet'/'1win', et le libellé cliquable "Cote 1Win ⇄"
+                // restait affiché après coup au lieu de revenir à "Cote Pinnacle ⇄" — trompeur
+                // par rapport à ce qu'annonce le bouton ("Système entièrement réinitialisé").
+                bkFixe = 'pinnacle';
+                sauvBkCible = 'pinnacle';
+                majBoutonsBkFixe();
+                majBoutonsSauvBkCible();
 
                 document.getElementById('inputRefCap').value = "";
                 document.getElementById('edit1X').value = 0;
@@ -3455,6 +3635,13 @@
                 updateGoalDisplay();
                 majBandeauSauvegarde();
                 validerProfitMin();
+                // Remis à false EN DERNIER (pas plus tôt dans cette fonction) : setIssues(2)
+                // ci-dessus appelle déjà validerProfitMin() en interne, à un moment où les
+                // champs cote/mise n'ont pas encore été vidés — avec les wallets déjà à 0, ça
+                // pouvait redéclencher un faux "capital insuffisant" (et remettre ce
+                // garde-fou à true) avant même la fin du reset. Le vrai dernier mot revient à
+                // CE validerProfitMin() final, une fois tous les champs déjà vidés au-dessus.
+                capitalInsuffisantDejaSignale = false;
                 afficherToast("Système entièrement réinitialisé.", 'info');
             }
         }
@@ -3733,7 +3920,14 @@
                 const str1X = h.m1X ? h.m1X.toString() : "-";
                 const strMel = h.mM ? h.mM.toString() : "-";
                 const strCote = `s:${h.os}/p:${h.opn}`.toLowerCase();
-                const strPin = h.miseP_Eur ? h.miseP_Eur.toString() : "";
+                // Cherche sur la MÊME valeur que celle réellement affichée dans la cellule
+                // "CÔTÉ 2 (MONTANT)" (voir bkDroitJournal/celluleDroite) — bug réel constaté
+                // sans cette généralisation : la recherche ne portait QUE sur miseP_Eur, donc
+                // taper le montant CFA affiché à l'écran pour un sauvetage vers l'autre soft
+                // ne retrouvait jamais la ligne correspondante.
+                const strPin = bkDroitJournal(h) === 'pinnacle'
+                    ? (h.miseP_Eur ? h.miseP_Eur.toString() : "")
+                    : (h.miseP_Cfa ? h.miseP_Cfa.toString() : "");
                 const strROI = h.pPct ? h.pPct.toString() : "";
                 const strProfit = h.pCfa ? h.pCfa.toString() : "";
 
@@ -3759,10 +3953,21 @@
                                 return `<button onclick="resolvPending(${index}, '${val}')" class="bg-purple-600/20 text-purple-400 px-2 py-1 rounded text-[8px] font-black border border-purple-500/30">${nom} @${s.cote}</button>`;
                             }).join('')}
                            </div>`
-                        : `<div class="flex gap-2 justify-end">
-                            <button onclick="resolvPending(${index}, 's')" class="bg-blue-600/20 text-blue-400 px-2 py-1 rounded text-[8px] font-black border border-blue-500/30">${(h.softId==='1xbet'?'1XBET':h.softId==='1win'?'1WIN':'SOFT')}</button>
-                            <button onclick="resolvPending(${index}, 'p')" class="bg-red-600/20 text-red-400 px-2 py-1 rounded text-[8px] font-black border border-red-500/30">${((h.bk2||'pinnacle')==='1xbet'?'1XBET':(h.bk2||'pinnacle')==='1win'?'1WIN':'PIN')}</button>
-                           </div>`)
+                        : (() => {
+                            // Origine dérivée de h.softId (voir cloturerCycle/resolvPending pour le
+                            // détail) — 'SAUVETAGE-1XBET' préfixé pour un sauvetage, '1xbet'/'1win'
+                            // déjà nus pour un PARI. Bug réel constaté sans ce retrait du préfixe :
+                            // le bouton gauche d'un sauvetage EN ATTENTE affichait le générique "SOFT"
+                            // au lieu du vrai bookmaker d'origine.
+                            const origineSoft = (h.softId || '').replace('SAUVETAGE-', '').toLowerCase();
+                            const labelGauche = origineSoft === '1xbet' ? '1XBET' : origineSoft === '1win' ? '1WIN' : 'SOFT';
+                            const bkDroit = bkDroitJournal(h);
+                            const labelDroit = bkDroit === '1xbet' ? '1XBET' : bkDroit === '1win' ? '1WIN' : 'PIN';
+                            return `<div class="flex gap-2 justify-end">
+                            <button onclick="resolvPending(${index}, 's')" class="bg-blue-600/20 text-blue-400 px-2 py-1 rounded text-[8px] font-black border border-blue-500/30">${labelGauche}</button>
+                            <button onclick="resolvPending(${index}, 'p')" class="bg-red-600/20 text-red-400 px-2 py-1 rounded text-[8px] font-black border border-red-500/30">${labelDroit}</button>
+                           </div>`;
+                          })())
                     : h.type === 'SAUVETAGE'
                         ? `<span class="text-red-400 mr-2">[SAUVETAGE]</span> <span class="font-black text-white">${h.pCfa.toLocaleString()}</span>`
                         : h.issues===3 && h.sides3
@@ -3789,7 +3994,13 @@
                 const rowClass = `log-row italic ${h.status === 'PENDING' ? 'opacity-60 bg-white/5' : ''} ${aDetail ? 'cursor-pointer hover:bg-white/5' : ''}`;
                 const rowClick = aDetail ? `onclick="toggleAlertDetail(${index})"` : '';
                 const boutonEdit = `<button onclick="event.stopPropagation(); ouvrirEditionOperation(${index})" class="text-slate-500 hover:text-emerald-400 ml-2" title="Éditer cette opération">✏️</button>`;
-                const ligneP = `<tr class="${rowClass}" ${rowClick}><td class="py-4 text-slate-500">${h.fullDate}${alerteBadge}</td><td class="py-4 uppercase font-black ${modeColor}">${h.softId}${issuesBadge}</td><td class="text-center font-bold text-blue-400">${h.m1X || '-'}</td><td class="text-center font-bold text-blue-600">${h.mM || '-'}</td><td class="text-center">S:${h.os}/P:${h.opn}</td><td class="text-center font-bold text-red-400">${(h.bk2||'pinnacle')==='pinnacle' ? (h.miseP_Eur||0)+'€' : (h.miseP_Cfa||0).toLocaleString('fr-FR')+' CFA'}</td><td class="text-right text-emerald-500 font-black">${h.pPct}%</td><td class="text-right font-black">${statusCell}${boutonEdit}</td></tr>`;
+                // Devise/montant du côté droit généralisés (bkDroitJournal : bk2 pour un PARI,
+                // sauvBkCible pour un SAUVETAGE) — bug réel constaté sans cette généralisation :
+                // un sauvetage vers l'autre soft affichait le montant en EUROS (miseP_Eur, un
+                // simple équivalent de conversion, jamais réellement déposé en euros) au lieu du
+                // vrai montant CFA engagé chez ce soft.
+                const celluleDroite = bkDroitJournal(h) === 'pinnacle' ? (h.miseP_Eur||0)+'€' : (h.miseP_Cfa||0).toLocaleString('fr-FR')+' CFA';
+                const ligneP = `<tr class="${rowClass}" ${rowClick}><td class="py-4 text-slate-500">${h.fullDate}${alerteBadge}</td><td class="py-4 uppercase font-black ${modeColor}">${h.softId}${issuesBadge}</td><td class="text-center font-bold text-blue-400">${h.m1X || '-'}</td><td class="text-center font-bold text-blue-600">${h.mM || '-'}</td><td class="text-center">S:${h.os}/P:${h.opn}</td><td class="text-center font-bold text-red-400">${celluleDroite}</td><td class="text-right text-emerald-500 font-black">${h.pPct}%</td><td class="text-right font-black">${statusCell}${boutonEdit}</td></tr>`;
                 const ligneDetail = aDetail ? `<tr id="detail-${index}" class="hidden bg-black/30 not-italic"><td colspan="8" class="p-4 text-[9px] text-slate-400 space-y-1 leading-relaxed">
                         ${aAlerte ? `<p><span class="text-emerald-500 font-black uppercase">${escapeHtml(h.alSport) || '--'}</span> · ${escapeHtml(h.alDateHeure) || '--'} · Edge annoncé BreakingBet : <span class="text-amber-400 font-black">${h.alEdgePct ? h.alEdgePct + '%' : '--'}</span></p>
                         <p>Match : <span class="text-white font-bold">${escapeHtml(h.alMatch) || '--'}</span> — <span class="text-slate-500">${escapeHtml(h.alLigue) || '--'}</span></p>
@@ -4139,6 +4350,22 @@
                     return;
                 }
             }
+            // Garde-fou de latence de diffusion — discuté et validé avec l'utilisateur : au-delà
+            // de SEUIL_LATENCE_OCR_BLOQUANTE_MS (90s) entre le collage de l'alerte et ce clic,
+            // la cote a de bonnes chances d'avoir déjà bougé ou d'être limitée chez le
+            // bookmaker. Toujours forcée, jamais désactivable — même principe que le garde-fou
+            // "données incertaines" juste au-dessus.
+            if (alerteMeta && alerteMeta.captureTs) {
+                const latenceMs = Date.now() - alerteMeta.captureTs;
+                if (latenceMs > SEUIL_LATENCE_OCR_BLOQUANTE_MS) {
+                    const s = Math.floor(latenceMs / 1000);
+                    const confirme = await confirmerPersonnalise(`⏱️ Cette alerte a été collée il y a ${s}s — l'edge a probablement déjà bougé, ou la cote peut être limitée chez le bookmaker.\n\nOK = je confirme, lancer quand même.\nAnnuler = ne pas lancer.`);
+                    if (!confirme) {
+                        afficherToast("⏸️ Lancement annulé — latence trop élevée depuis la capture.", 'info');
+                        return;
+                    }
+                }
+            }
             const t = parseFloat(document.getElementById('mise').value);
             const heureSysteme = new Date().getHours();
 
@@ -4407,6 +4634,11 @@
             // ne bloque jamais le flux principal même en cas d'échec réseau.
             if (op) diffuserOperationTelegram(op);
 
+            // L'opération existe désormais : le chrono de latence "préparation" (avant Lancer)
+            // n'a plus lieu d'être — c'est le timer d'exécution (startTimer, juste en dessous)
+            // qui prend le relais pour la suite (mises à copier chez les bookmakers).
+            arreterChronoLatenceOcr();
+
             rafraichir();
             startTimer();
         }
@@ -4442,8 +4674,9 @@
             if(type==='N')  document.getElementById('resN').className  = "text-4xl font-mono font-black text-emerald-400 italic";
             copiesSoftEffectuees++;
             // Copies requises = nombre réel de wallets softs utilisés dans l'opération
-            // (0, 1 ou 2 selon les bookmakers assignés — fonctionne pour 2 et 3 issues)
-            const copiesRequises = [op.m1X > 0, op.mM > 0].filter(Boolean).length;
+            // (0, 1 ou 2 selon les bookmakers assignés — fonctionne pour 2 et 3 issues) —
+            // centralisé dans copiesRequisesPourOp, réutilisé aussi par le timer d'exécution.
+            const copiesRequises = copiesRequisesPourOp(op);
             // La boîte Pinnacle ne doit JAMAIS se déverrouiller s'il n'y a réellement rien à y
             // copier. Bug réel constaté (arb 100% entre softs, 1win vs 1xbet, bkFixe='1xbet') :
             // une fois les deux mises softs copiées, cette boîte — pourtant étiquetée "PINNACLE
@@ -4454,6 +4687,9 @@
             if(copiesSoftEffectuees >= copiesRequises && bkCibleBoitePinnacle() != null) {
                 document.getElementById('boxPin').classList.remove('locked-pin');
             }
+            // Repasse immédiatement le timer d'exécution en vert dès que les mises requises
+            // sont copiées, sans attendre la prochaine seconde — voir majAffichageTimer.
+            majAffichageTimer();
         }
         function copierMontant(t) {
             if(t === 'pin') {
@@ -4711,6 +4947,7 @@
                 // Solde du côté fixe — même mapping que balSoft, avec Pinnacle en plus.
                 const balFixe = bkFixe === 'pinnacle' ? bP : bkFixe === '1xbet' ? b1X : bkFixe === '1win' ? bM : 0;
                 const fondsInsuffisants = mS > balSoft || mPC > balFixe;
+                signalerCapitalInsuffisantSiNouveau(fondsInsuffisants);
                 // Affichage permanent "Besoin / Solde" sous chaque cote — en vrai badge visible
                 // (pas juste une légende grise), pour que le manque saute aux yeux avant même
                 // de cliquer "Lancer" plutôt que de découvrir un message générique après coup.
@@ -4814,6 +5051,7 @@
                     else if (bk === 'pinnacle') besoinP += cfa;
                 });
                 const fondsInsuffisants3I = besoin1X > b1X || besoinM > bM || besoinP > bP;
+                signalerCapitalInsuffisantSiNouveau(fondsInsuffisants3I);
                 // Affichage permanent "Besoin / Solde" sous chaque côté — même principe qu'en
                 // 2 issues, mais le besoin affiché est le TOTAL agrégé pour le bookmaker de ce
                 // côté (si 2 côtés partagent le même bookmaker, les deux affichent le même
@@ -4962,18 +5200,51 @@
             clearInterval(timerInterval);
             timeLeft = resumeSecondes || 60;
             opDeadline = Date.now() + timeLeft * 1000;
-            document.getElementById('timerText').innerText = timeLeft + "s";
-            document.getElementById('timerBar').style.width = (timeLeft / 60 * 100) + '%';
+            majAffichageTimer();
             sauvegarder();
             timerInterval = setInterval(() => {
                 timeLeft--;
-                document.getElementById('timerText').innerText = timeLeft + "s";
-                document.getElementById('timerBar').style.width = (timeLeft / 60 * 100) + "%";
+                majAffichageTimer();
                 if(timeLeft <= 0) {
                     clearInterval(timerInterval);
                     annulerOperationExpired();
                 }
             }, 1000);
+        }
+
+        // Affiche le timer d'exécution ET escalade visuellement/sonore (voir SEUIL_TIMER_*) —
+        // discuté et validé avec l'utilisateur — tant que les mises softs n'ont pas toutes été
+        // copiées (copiesRequisesPourOp) : sans ça, l'opérateur ne découvrait un flux qui allait
+        // expirer qu'au moment de l'annulation automatique, sans aucun signal progressif avant.
+        // Dès que les mises requises sont copiées (voir copierIndiv), la barre repasse en vert
+        // immédiatement — plus rien à signaler, le flux n'attend plus que la résolution.
+        function majAffichageTimer() {
+            const bar = document.getElementById('timerBar');
+            const txt = document.getElementById('timerText');
+            if (!bar || !txt) return;
+            txt.innerText = timeLeft + "s";
+            bar.style.width = (timeLeft / 60 * 100) + "%";
+            const misesRestantes = op ? (copiesSoftEffectuees < copiesRequisesPourOp(op)) : false;
+            if (!misesRestantes) {
+                bar.className = "bg-emerald-500 h-full w-full";
+                txt.className = "text-[10px] font-black text-emerald-500 font-mono";
+                return;
+            }
+            if (timeLeft <= SEUIL_TIMER_CRITIQUE_S) {
+                bar.className = "bg-red-500 h-full w-full animate-pulse";
+                txt.className = "text-[10px] font-black text-red-500 font-mono animate-pulse";
+                jouerBip(880, 150); // bip répété chaque seconde sous ce seuil
+            } else if (timeLeft <= SEUIL_TIMER_ROUGE_S) {
+                bar.className = "bg-red-500 h-full w-full";
+                txt.className = "text-[10px] font-black text-red-500 font-mono";
+                if (timeLeft === SEUIL_TIMER_ROUGE_S) jouerBip(660, 150); // bip unique au passage
+            } else if (timeLeft <= SEUIL_TIMER_ORANGE_S) {
+                bar.className = "bg-amber-500 h-full w-full";
+                txt.className = "text-[10px] font-black text-amber-400 font-mono";
+            } else {
+                bar.className = "bg-emerald-500 h-full w-full";
+                txt.className = "text-[10px] font-black text-emerald-500 font-mono";
+            }
         }
 
         // Réaffiche la zone d'exécution (mises, badge, bilan) à partir d'une opération "op"

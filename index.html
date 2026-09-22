@@ -2184,6 +2184,65 @@
             return ocrWorkerPromise;
         }
 
+        // Réordonne les lignes OCR par POSITION VERTICALE RÉELLE sur l'image (data.lines,
+        // fourni par Tesseract.js par défaut en v5, chaque ligne portant un bbox {x0,y0,x1,y1}
+        // en pixels) plutôt que de faire confiance à l'ordre du FLUX DE TEXTE que Tesseract
+        // restitue — qui peut se tromper sur des mises en page ambiguës, même quand chaque
+        // ligne individuelle est parfaitement bien lue.
+        //
+        // Bug réel constaté (alerte Eva Vedder - Charo Esquiva Banuls, Tennis, DNB, 1xbet vs
+        // ps3838) : Tesseract restituait le texte dans l'ordre "1xbet / ps3838 / ligue de
+        // ps3838 / ligue de 1xbet" — alors qu'en mesurant les coordonnées RÉELLES des mots sur
+        // l'image, la ligue de 1xbet ("Tennis. World Tennis. Yecla. Women") est bien
+        // positionnée à ~20px sous sa propre rangée bookmaker (donc juste en dessous), et
+        // bien AVANT la rangée ps3838 (~558px plus bas) — le flux de texte de Tesseract avait
+        // simplement mal ordonné deux paragraphes que sa propre analyse de mise en page avait
+        // pourtant correctement délimités individuellement. Plusieurs correctifs successifs
+        // ont tenté de deviner cette attribution par des MOTIFS DE TEXTE (voir
+        // `_ligueDifferee`/`ligneEspaceAvant` dans parserAlerteBreakingBet) — fragile par
+        // nature, un motif pouvant vouloir dire l'inverse d'une alerte à l'autre (constaté
+        // entre les alertes Noah Karma et Eva Vedder, structurellement identiques une fois le
+        // texte à plat, mais de bonne réponse opposée). Trier par la position RÉELLE élimine
+        // le problème à la racine : ce n'est plus une supposition, c'est un fait géométrique.
+        //
+        // Seuil de 60px (dans l'espace de l'image déjà agrandie par preparerImagePourOcr) pour
+        // décider si deux lignes consécutives appartiennent au même bloc bookmaker (donc pas
+        // de ligne vide insérée entre elles) ou à deux blocs différents (ligne vide insérée,
+        // pour que la logique existante de parserAlerteBreakingBet — qui raisonne déjà sur des
+        // paragraphes séparés par des lignes vides — continue de s'appliquer sans changement).
+        // Mesuré sur 3 alertes réelles (Eva Vedder, Noah Karma, Callum Connor - Piero
+        // Guaylupo) : l'écart entre une rangée bookmaker et SA PROPRE ligue (ou la suite d'une
+        // ligue coupée sur 2 lignes) est TOUJOURS entre 16 et 27px, tandis que l'écart entre
+        // la fin d'un bloc et le DÉBUT du suivant est TOUJOURS supérieur à 100px — 60px laisse
+        // une marge confortable des deux côtés sur les 3 cas mesurés.
+        //
+        // Se rabat silencieusement sur `null` (l'appelant utilise alors data.text comme avant,
+        // comportement historique inchangé) si data.lines est absent, vide, ou mal formé — un
+        // format inattendu de Tesseract.js ne doit jamais faire planter la lecture OCR, juste
+        // priver cette alerte précise de l'amélioration positionnelle.
+        function reordonnerLignesParPosition(data) {
+            try {
+                if (!Array.isArray(data.lines) || !data.lines.length) return null;
+                const lignesValides = data.lines
+                    .filter(l => l && typeof l.text === 'string' && l.text.trim()
+                        && l.bbox && typeof l.bbox.y0 === 'number')
+                    .slice()
+                    .sort((a, b) => a.bbox.y0 - b.bbox.y0);
+                if (lignesValides.length < 2) return null;
+                const SEUIL_ECART_PX = 60;
+                let sortie = '';
+                let finPrecedente = null;
+                for (const l of lignesValides) {
+                    if (finPrecedente !== null && (l.bbox.y0 - finPrecedente) > SEUIL_ECART_PX) sortie += '\n';
+                    sortie += l.text.replace(/\n/g, ' ').trim() + '\n';
+                    finPrecedente = typeof l.bbox.y1 === 'number' ? l.bbox.y1 : l.bbox.y0;
+                }
+                return sortie;
+            } catch (e) {
+                return null;
+            }
+        }
+
         // Lit l'image en PSM 4 (mode nominal). Si moins de 2 bookmakers sont détectés —
         // signe probable d'une capture au rendu inhabituel (thème clair, résolution basse,
         // alerte multi-lignes différente) — retente automatiquement en PSM 6 ("bloc de texte
@@ -2192,12 +2251,18 @@
         async function ocrAvecRepli(source) {
             const worker = await getOcrWorker();
             let { data } = await worker.recognize(source);
-            let meta = parserAlerteBreakingBet(data.text || '');
+            // `texteOcr` : le texte réordonné par position quand c'est possible (voir
+            // reordonnerLignesParPosition ci-dessus), sinon le flux brut de Tesseract tel
+            // quel — jamais les deux mélangés, pour que le panneau "voir le texte brut" reste
+            // fidèle à ce que le parseur a réellement reçu.
+            let texteOcr = reordonnerLignesParPosition(data) || data.text || '';
+            let meta = parserAlerteBreakingBet(texteOcr);
             if (meta.blocs.length < 2) {
                 await worker.setParameters({ tessedit_pageseg_mode: '6' });
                 const retry = await worker.recognize(source);
                 await worker.setParameters({ tessedit_pageseg_mode: '4' }); // remis par défaut pour le prochain collage
-                const metaRetry = parserAlerteBreakingBet(retry.data.text || '');
+                const texteRetry = reordonnerLignesParPosition(retry.data) || retry.data.text || '';
+                const metaRetry = parserAlerteBreakingBet(texteRetry);
                 if (metaRetry.blocs.length > meta.blocs.length) { meta = metaRetry; data = retry.data; }
             }
             // Confiance spécifique du mot "HH:MM" (heure du match) — contrairement aux cotes,

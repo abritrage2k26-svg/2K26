@@ -1502,7 +1502,7 @@
                     // uniquement quand elle est collée à un chiffre, pour ne pas toucher aux
                     // lettres normales du nom du match (ex. "Boca").
                     reste = reste.replace(/[oO](?=\d)/g, '0').replace(/(?<=\d)[oO]/g, '0');
-                    let cote = null, marche = '', coteReconstituee = false;
+                    let cote = null, marche = '', coteReconstituee = false, coteAmbigueAlt = null;
                     // Masque le contenu entre parenthèses (ex. le "-1.5" d'un "AH1(-1.5)") AVANT
                     // de chercher la cote — sinon, quand la vraie cote est illisible, la valeur
                     // du handicap peut être confondue avec elle (bug réel constaté : "AH1(-1.5)"
@@ -1635,6 +1635,22 @@
                             const chiffres = meilleur[1];
                             cote = chiffres.length === 1 ? parseFloat(`${chiffres}.0`) : parseFloat(`${chiffres[0]}.${chiffres.slice(1)}`);
                             coteReconstituee = true;
+                            // Bug réel constaté (alerte réelle Amal Tiznit - Ittihad Riadhi de
+                            // Tanger, marché TO (3-way)(4), edge annoncé 2.05%) : une séquence de
+                            // 2 CHIFFRES SEULEMENT est intrinsèquement ambiguë — "16" est aussi
+                            // bien une VRAIE cote entière (16.0, plausible sur un marché "3-way"
+                            // à 3 issues, où une issue improbable peut avoir une cote à 2 chiffres)
+                            // qu'une décimale tronquée par l'OCR (1.6) — contrairement aux
+                            // séquences de 3-4 chiffres (jamais une vraie cote entière, toujours
+                            // une décimale avalée, cf. commentaire au-dessus). Ici, la reconstruction
+                            // automatique en "1.6" était FAUSSE : elle faisait chuter l'edge calculé
+                            // de +2.05% (cohérent avec "16.0") à -35% — l'app affichait alors un
+                            // "Écart suspect" causé par sa PROPRE mauvaise lecture, jamais remis en
+                            // cause. On mémorise donc ici la lecture alternative "nombre entier tel
+                            // quel" pour trancher plus bas, une fois tous les blocs connus, par
+                            // comparaison avec l'edge annoncé par l'alerte elle-même (bien plus
+                            // fiable qu'une hypothèse de fréquence a priori).
+                            if (chiffres.length === 2) coteAmbigueAlt = parseInt(chiffres, 10);
                             reste = reste.slice(0, meilleur.index).trim();
                             reste = reste.replace(/\s+(?:ft|ht|t)\s*$/i, '').trim();
                         // Résidu isolé d'icône (flèche de mouvement de cote, souvent lue comme
@@ -1690,7 +1706,7 @@
                     // distinction : "Gabriella Da Silva Fick (Games) – Valentina Steiner (Games)"
                     // perdait son "–" central, recollant les deux joueuses sans aucun séparateur.
                     reste = reste.replace(/—\s*$/, '').trim();
-                    const bloc = { bookmaker, match: reste, ligue: '', marche, cote, coteReconstituee, _ligneIndexLigue: null, _ligueDifferee: false };
+                    const bloc = { bookmaker, match: reste, ligue: '', marche, cote, coteReconstituee, _ligneIndexLigue: null, _ligueDifferee: false, _coteAmbigueAlt: coteAmbigueAlt };
                     const suivante = lignes[i + 1] || '';
                     // Rejette `suivante` comme ligue UNIQUEMENT si elle ressemble elle-même à la
                     // ligne d'un AUTRE bookmaker (nom de bookmaker reconnu en tête) — c'est le
@@ -2008,6 +2024,34 @@
                     }
                 }
             }
+            // Désambiguïsation d'une cote reconstituée à 2 chiffres (voir _coteAmbigueAlt,
+            // posé plus haut lors de la reconstruction "point décimal avalé") grâce à l'edge
+            // ANNONCÉ par l'alerte elle-même — bien plus fiable qu'une hypothèse de fréquence a
+            // priori. On ne tranche QUE si un seul bloc est ambigu à la fois (jamais rencontré
+            // en pratique 2 blocs ambigus sur la même alerte — combinatoire non gérée) et qu'au
+            // moins un AUTRE bloc a déjà une cote fiable pour servir de référence.
+            if (meta.edgePct && !isNaN(parseFloat(meta.edgePct))) {
+                const edgeAnnonce = parseFloat(meta.edgePct);
+                const blocsAmbigus = meta.blocs.filter(b => b._coteAmbigueAlt != null);
+                if (blocsAmbigus.length === 1) {
+                    const blocAmbigu = blocsAmbigus[0];
+                    const autresCotes = meta.blocs.filter(b => b !== blocAmbigu && b.cote).map(b => b.cote);
+                    if (autresCotes.length) {
+                        const sommeAutres = autresCotes.reduce((s, c) => s + (1 / c), 0);
+                        const edgePour = (coteTest) => ((1 / (sommeAutres + (1 / coteTest))) - 1) * 100;
+                        const ecartReconstituee = Math.abs(edgePour(blocAmbigu.cote) - edgeAnnonce);
+                        const ecartAlt = Math.abs(edgePour(blocAmbigu._coteAmbigueAlt) - edgeAnnonce);
+                        // La lecture alternative ne l'emporte que si elle colle NETTEMENT mieux à
+                        // l'edge annoncé (même seuil que l'avertissement "Écart suspect" plus bas,
+                        // pour rester cohérent) ET strictement mieux que la reconstruction actuelle.
+                        if (ecartAlt < 1.5 && ecartAlt < ecartReconstituee) {
+                            blocAmbigu.cote = blocAmbigu._coteAmbigueAlt;
+                            blocAmbigu.coteReconstituee = false;
+                        }
+                    }
+                }
+            }
+            meta.blocs.forEach(b => { delete b._coteAmbigueAlt; });
             // Nettoyage final de la ligue de CHAQUE bloc, quel que soit le chemin
             // d'assignation emprunté (ligne suivante directe, ligne suivante + continuation,
             // ancien format "2 lignes", ou réassignation par le filet de sécurité "ligues

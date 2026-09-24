@@ -1418,7 +1418,21 @@
                     // Normalise la virgule décimale en point AVANT le filtrage de caractères
                     // ci-dessous (qui ne conserve pas la virgule) — sinon "1,57" devient "1 57"
                     // et la cote n'est plus reconnaissable comme un nombre.
-                    let reste = rowMatch[2].replace(/(\d),(\d)/g, '$1.$2').replace(/[^\p{L}\p{N}()°.\-–—⇄≠→#&/\s]/gu, ' ').trim();
+                    // Confusion OCR classique de la lettre "l" minuscule lue comme un point
+                    // d'exclamation "!" en toute fin de mot (les deux ne sont qu'un simple trait
+                    // vertical à cette taille de police) — ex. "Ulikoo!" au lieu de "Ulikool"
+                    // (bug réel constaté, alerte Tartu Ulikool - Kalev Cramo). Appliquée ICI,
+                    // AVANT le filtrage de caractères juste en dessous : ce filtrage ne conserve
+                    // qu'un jeu de caractères précis qui n'inclut PAS "!" (jamais rencontré comme
+                    // caractère légitime dans un nom de match/ligue), donc un correctif tenté
+                    // plus tard sur `reste` arriverait TROP TARD — le "!" aurait déjà été
+                    // silencieusement effacé (remplacé par un espace) avant même d'être vu.
+                    // Un "!" n'apparaît JAMAIS légitimement collé à une lettre minuscule dans un
+                    // nom d'équipe (un vrai point d'exclamation, rarissime dans ce contexte,
+                    // serait de toute façon séparé par un espace) — donc uniquement corrigé
+                    // quand il est collé sans espace à une lettre qui précède.
+                    const rowMatch2Corrige = rowMatch[2].replace(/([a-zà-öø-ÿ])!/g, '$1l');
+                    let reste = rowMatch2Corrige.replace(/(\d),(\d)/g, '$1.$2').replace(/[^\p{L}\p{N}()°.\-–—⇄≠→#&/\s]/gu, ' ').trim();
                     // Normalise le séparateur "#" OU "&" (résidus OCR de "⇄"/"≠", le symbole
                     // affiché par BreakingBet pour signaler un ordre d'équipes différent entre
                     // bookmakers) vers "-", pour un nom de match affiché de façon cohérente avec
@@ -1798,7 +1812,25 @@
                 const estLigneMatch = /\S\s*[-–—]\s*\S/.test(suivante)
                     && suivante.replace(/[^a-z0-9]/gi, '').length >= 4;
                 if (estNomBk && estLigneMatch && !suivanteEstRangeeUnique) {
-                    const bloc = { bookmaker: l, match: suivante.replace(/\s*\+[a-zà-öø-ÿ]{1,10}\b/gi, ' ').replace(/\s+/g, ' ').trim(), ligue: '', marche: '', cote: null };
+                    // Même résidu isolé d'icône ("copier le nom du match") que dans le format
+                    // "1 ligne" ci-dessus (mi/ki/wi/bi/ui/gi/kw/k/m/w/b/u, éventuellement suivi
+                    // d'un accent isolé lu comme non-ASCII) — ce nettoyage n'existait QUE dans
+                    // le format "1 ligne" (`reste`), jamais ici dans le repli "2 lignes", alors
+                    // que ce repli sert justement aux captures les PLUS dégradées, là où ce
+                    // résidu est le plus susceptible d'apparaître. Bug réel constaté : alerte
+                    // Tartu Ulikool - Kalev Cramo (Basket-ball, 1xbet) — "Ki Tartu Ulikoo! -
+                    // Kalev Cramo" gardait ce "Ki" parasite en tête du nom du match jusqu'à
+                    // l'écran ET jusqu'au message envoyé aux abonnés.
+                    let matchNettoye = suivante
+                        .replace(/^(?:mi|ki|wi|bi|ui|gi|kw|k|m|w|b|u)[^\x00-\x7F]\s+(?=[A-ZÀ-Ý])/i, '')
+                        .replace(/^(?:mi|ki|wi|bi|ui|gi|kw|k|m|w|b|u)\s+(?=[A-ZÀ-Ý])/i, '')
+                        .replace(/^[^\x00-\x7F]{1,3}\s+(?=[A-Z])/, '')
+                        // Même confusion OCR "l" ↔ "!" que dans le format "1 ligne" (voir
+                        // commentaire associé plus haut) — le repli "2 lignes" sert aux captures
+                        // les plus dégradées, où cette confusion est au moins aussi fréquente.
+                        .replace(/([a-zà-öø-ÿ])!/g, '$1l')
+                        .trim();
+                    const bloc = { bookmaker: l, match: matchNettoye.replace(/\s*\+[a-zà-öø-ÿ]{1,10}\b/gi, ' ').replace(/\s+/g, ' ').trim(), ligue: '', marche: '', cote: null };
                     // Même nettoyage GLOBAL (pas seulement en fin de chaîne — voir commentaire
                     // associé sur le format "1 ligne") du qualificatif "+OT"/"+AP" en ligue,
                     // repli "2 lignes".

@@ -1834,10 +1834,43 @@
                     // Même nettoyage GLOBAL (pas seulement en fin de chaîne — voir commentaire
                     // associé sur le format "1 ligne") du qualificatif "+OT"/"+AP" en ligue,
                     // repli "2 lignes".
-                    if (lignes[i + 2] && !/^\d+[.,]\d{2,3}$/.test(lignes[i + 2])) bloc.ligue = lignes[i + 2].replace(/vv/gi, m => m[0] === m[0].toUpperCase() ? 'W' : 'w').replace(/\s*\+[a-zà-öø-ÿ]{1,10}\b/gi, ' ').replace(/\s+/g, ' ').trim();
+                    // Audit de code (pas encore observé sur une alerte réelle) : `lignes[i+2]`
+                    // n'était exclu de la ligue QUE s'il s'agissait d'une cote NUE ("2.20" seul
+                    // sur sa ligne) — mais le repli "2 lignes" peut tout autant placer marché ET
+                    // cote COLLÉS sur cette même ligne ("TO(2.5) 1.87", sans ligne de ligue
+                    // dédiée), auquel cas l'ancienne condition laissait passer cette ligne comme
+                    // "ligue" (ex. `bloc.ligue = "TO(2.5) 1.87"`) AVANT même que la boucle
+                    // marché/cote juste en dessous ne la relise correctement — la cote finissait
+                    // alors correctement extraite, mais la ligue restait polluée par ce même
+                    // texte. Le même motif de reconnaissance (`.{0,15}?` + nombre décimal en fin
+                    // de ligne) est donc réutilisé ici pour exclure cette ligne de la ligue.
+                    const ligneEstMarcheEtCote = /^.{0,15}?\s*\d+[.,]\d{1,3}\s*$/.test(lignes[i + 2] || '');
+                    if (lignes[i + 2] && !ligneEstMarcheEtCote) bloc.ligue = lignes[i + 2].replace(/vv/gi, m => m[0] === m[0].toUpperCase() ? 'W' : 'w').replace(/\s*\+[a-zà-öø-ÿ]{1,10}\b/gi, ' ').replace(/\s+/g, ' ').trim();
                     for (let j = i + 2; j <= i + 4 && j < lignes.length; j++) {
-                        const mc = lignes[j].match(/^(.{0,15}?)\s*(\d+[.,]\d{2,3})\s*$/);
-                        if (mc) { bloc.marche = mc[1].trim(); bloc.cote = parseFloat(mc[2].replace(',', '.')); break; }
+                        // Même correctif "x2"/"Xx2" → "X2" que le format "1 ligne" (voir plus
+                        // haut), appliqué ICI À LA LIGNE AVANT extraction — ce repli "2 lignes"
+                        // n'avait jusqu'ici AUCUN de ces nettoyages, alors que "Ki"/"!" viennent
+                        // justement d'y être ajoutés pour le nom du match (mêmes captures
+                        // dégradées, même besoin). Seuil de décimales aligné sur le format "1
+                        // ligne" (1 à 3, pas 2 à 3 seulement) — une cote à 1 seule décimale
+                        // ("1.9") n'était jusqu'ici jamais reconnue ici, contrairement à l'autre
+                        // format, alors que rien ne distingue les deux cas pour ce critère.
+                        const ligneMc = lignes[j].replace(/\bx{1,2}([12])\b/gi, 'X$1');
+                        const mc = ligneMc.match(/^(.{0,15}?)\s*(\d+[.,]\d{1,3})\s*$/);
+                        if (mc) {
+                            const marcheCandidat = mc[1].trim();
+                            // Même filtre "résidu isolé d'une seule lettre" que le format "1
+                            // ligne" (`estResiduLettreSeule`) — sans lui, un résidu d'icône mal
+                            // lu ("L", "f"...) collé juste avant la cote se faisait élire marché
+                            // à tort dans ce repli, alors que le format "1 ligne" s'en protège
+                            // depuis longtemps. `corrigerPointMarche` (reconstruction du point
+                            // décimal avalé, ex. "TO(25)" → "TO(2.5)") n'était non plus JAMAIS
+                            // appliqué ici — un marché ainsi capturé restait brut, sans passer
+                            // par le même nettoyage que l'autre format.
+                            bloc.marche = (marcheCandidat && !estResiduLettreSeule(marcheCandidat)) ? corrigerPointMarche(marcheCandidat, meta.sport) : '';
+                            bloc.cote = parseFloat(mc[2].replace(',', '.'));
+                            break;
+                        }
                     }
                     meta.blocs.push(bloc);
                 }
@@ -3941,10 +3974,20 @@
             // heures après le franchissement du seuil. Même intervalle (60s) que les autres
             // vérifications périodiques déjà en place ci-dessus (reset quotidien,
             // publications automatiques, retraits VIP expirés).
+            // Audit de code complet : `envoyerRappelAbonnesTelegram` (rappel Telegram à
+            // soi-même, au maximum 1× par jour — voir son propre garde-fou interne
+            // `dernierRappelAbonnesEnvoye === aujourdHui`) souffrait EXACTEMENT du même défaut
+            // que les 3 bandeaux ci-dessus, corrigé un peu plus tôt dans cette même session :
+            // appelée seulement au chargement de page, jamais rappelée ensuite. Un terminal
+            // resté ouvert en continu au-delà de minuit ne recevait donc plus JAMAIS ce rappel
+            // les jours suivants tant que la page n'était pas rechargée — alors que la fonction
+            // est déjà sans danger à rappeler souvent (elle se tait d'elle-même tant que le
+            // jour n'a pas changé). Ajoutée au même intervalle que les 3 bandeaux ci-dessus.
             setInterval(() => {
                 majBandeauAbonnesRisque();
                 majBandeauSauvegarde();
                 majBandeauOperationsPending();
+                envoyerRappelAbonnesTelegram();
             }, 60000);
             envoyerRappelAbonnesTelegram();
             // Vérifie fréquemment si on est bien sur la vue terminal (pas abonnés/journal/édition)

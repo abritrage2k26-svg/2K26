@@ -1943,6 +1943,23 @@
                     }
                 }
             }
+            // Nettoyage final de la ligue de CHAQUE bloc, quel que soit le chemin
+            // d'assignation emprunté (ligne suivante directe, ligne suivante + continuation,
+            // ancien format "2 lignes", ou réassignation par le filet de sécurité "ligues
+            // groupées après coup" ci-dessus) — contrairement au nom du match (`reste`), qui
+            // reçoit plusieurs couches de retrait de résidu OCR isolé en fin de chaîne, la
+            // ligue n'en recevait AUCUNE jusqu'ici. Résidu isolé "pp" constaté : une petite
+            // icône (probablement un indicateur de round/drapeau) accolée par BreakingBet
+            // juste après le texte de ligue sur les compétitions individuelles à rounds (ITF,
+            // Challenger...) est mal lue par l'OCR comme "pp" et restait alors collée jusqu'à
+            // l'écran ET jusqu'au message envoyé aux abonnés. Bug réel constaté : bloc PS3838,
+            // alerte Oluwaseun Peter Ogunsakin - Arjun Rathi (Tennis, ITF Men Monastir, DNB /
+            // 1re période) : "Tennis. ITF Men Monastir-R1 pp". Espace obligatoire avant "pp"
+            // (jamais un mot plus long qui se terminerait par ces deux lettres) et ancré en
+            // toute fin de chaîne (jamais un "pp" légitime au milieu d'un nom de ligue).
+            for (const b of meta.blocs) {
+                if (b.ligue) b.ligue = b.ligue.replace(/\s+pp\s*$/i, '').trim();
+            }
             return meta;
         }
 
@@ -3881,6 +3898,22 @@
             majBandeauAbonnesRisque();
             majBandeauSauvegarde();
             majBandeauOperationsPending();
+            // Ces 3 bandeaux (et leurs bips associés) dépendent tous d'une condition qui
+            // évolue avec le TEMPS QUI PASSE (un abonné qui entre dans la fenêtre J-7, une
+            // sauvegarde qui devient "en retard", une opération PENDING qui traîne) — pas
+            // seulement d'une action explicite de l'opérateur (ouvrir le panneau Abonnés,
+            // exporter, clôturer une opération). Sans un intervalle dédié, ils ne se
+            // réévaluaient qu'au chargement de la page ET au moment de ces actions précises :
+            // un terminal resté ouvert en continu (cas normal d'utilisation) ne recevait donc
+            // JAMAIS l'alerte tant que la page n'était pas rechargée manuellement, même des
+            // heures après le franchissement du seuil. Même intervalle (60s) que les autres
+            // vérifications périodiques déjà en place ci-dessus (reset quotidien,
+            // publications automatiques, retraits VIP expirés).
+            setInterval(() => {
+                majBandeauAbonnesRisque();
+                majBandeauSauvegarde();
+                majBandeauOperationsPending();
+            }, 60000);
             envoyerRappelAbonnesTelegram();
             // Vérifie fréquemment si on est bien sur la vue terminal (pas abonnés/journal/édition)
             // pour afficher ou masquer le bouton flottant scroll haut/bas — un intervalle court

@@ -1533,8 +1533,16 @@
                     // regex ci-dessous n'autorisait qu'UN SEUL caractère non-ASCII après le
                     // préfixe ASCII, donc ne matchait pas du tout ce résidu à 2 caractères
                     // accentués ; élargi à 1 ou 2 caractères non-ASCII consécutifs.
-                    reste = reste.replace(/^(?:mi|ki|wi|bi|ui|gi|kw|nu|di|k|m|w|b|u)[^\x00-\x7F]{1,2}\s+(?=[A-ZÀ-Ý])/i, '').trim();
-                    reste = reste.replace(/^(?:mi|ki|wi|bi|ui|gi|kw|nu|di|k|m|w|b|u)\s+(?=[A-ZÀ-Ý])/i, '').trim();
+                    // Variante avec un tiret parasite CE DEVANT le résidu (alerte réelle Perth
+                    // Glory FC - Adelaide United, bloc 1Win) : "– k Perth Glory FC – Adelaide
+                    // United" gardait "– k " en tête, jamais retiré car les regex ci-dessous
+                    // exigeaient que le résidu commence directement en tête de chaîne (^) — un
+                    // tiret ne peut JAMAIS légitimement ouvrir un nom de match (le vrai séparateur
+                    // entre 2 noms est toujours au MILIEU, jamais en tête), donc ce tiret
+                    // optionnel ne risque aucun faux positif. Élargi pour le tolérer, avec ou
+                    // sans lui, devant n'importe quelle variante déjà connue.
+                    reste = reste.replace(/^(?:[-–—]\s+)?(?:mi|ki|wi|bi|ui|gi|kw|nu|di|k|m|w|b|u)[^\x00-\x7F]{1,2}\s+(?=[A-ZÀ-Ý])/i, '').trim();
+                    reste = reste.replace(/^(?:[-–—]\s+)?(?:mi|ki|wi|bi|ui|gi|kw|nu|di|k|m|w|b|u)\s+(?=[A-ZÀ-Ý])/i, '').trim();
                     // Autre variante de lecture du même bouton "copier" — cette fois rendu en
                     // caractères non-ASCII plutôt qu'en lettres latines parasites (pas la flèche
                     // de mouvement de cote gérée plus loin en fin de ligne : icône différente,
@@ -1965,8 +1973,8 @@
                     // Kalev Cramo" gardait ce "Ki" parasite en tête du nom du match jusqu'à
                     // l'écran ET jusqu'au message envoyé aux abonnés.
                     let matchNettoye = suivante
-                        .replace(/^(?:mi|ki|wi|bi|ui|gi|kw|nu|di|k|m|w|b|u)[^\x00-\x7F]{1,2}\s+(?=[A-ZÀ-Ý])/i, '')
-                        .replace(/^(?:mi|ki|wi|bi|ui|gi|kw|nu|di|k|m|w|b|u)\s+(?=[A-ZÀ-Ý])/i, '')
+                        .replace(/^(?:[-–—]\s+)?(?:mi|ki|wi|bi|ui|gi|kw|nu|di|k|m|w|b|u)[^\x00-\x7F]{1,2}\s+(?=[A-ZÀ-Ý])/i, '')
+                        .replace(/^(?:[-–—]\s+)?(?:mi|ki|wi|bi|ui|gi|kw|nu|di|k|m|w|b|u)\s+(?=[A-ZÀ-Ý])/i, '')
                         .replace(/^[^\x00-\x7F]{1,3}\s+(?=[A-Z])/, '')
                         // Même confusion OCR "l" ↔ "!" que dans le format "1 ligne" (voir
                         // commentaire associé plus haut) — le repli "2 lignes" sert aux captures

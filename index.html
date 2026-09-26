@@ -1330,7 +1330,18 @@
             {
                 let vuLigneVide = false;
                 for (const lBrute of texteNettoye.split('\n')) {
-                    const l = lBrute.trim().replace(/^[^\p{L}\p{N}]+/u, '').trim();
+                    const lBruteTrim = lBrute.trim();
+                    // Ne retire PAS le "(" d'ouverture quand la ligne ENTIÈRE n'est qu'un
+                    // qualificatif entre parenthèses ("(Points)", "(1re mi-temps)"...) — bug réel
+                    // constaté (alerte réelle Nicaragua U23 - Trinidad and Tobago U23/(Points),
+                    // Volley-ball, DNB1/DNB2) : la ligne de continuation "(Points)" (suite du nom
+                    // du match, débordé sur 2 lignes) se faisait amputer de son "(" par ce même
+                    // nettoyage, pourtant prévu pour retirer un résidu d'ICÔNE en tête de ligne
+                    // (🔒📌...), jamais pour une parenthèse ouvrante légitime d'un vrai
+                    // qualificatif entier ("(Points)" affiché tel quel sur la carte source). On
+                    // ne retire donc ce résidu de tête QUE si la ligne n'est pas déjà, à elle
+                    // seule, une parenthèse bien formée du début à la fin.
+                    const l = (/^\([^)]{1,40}\)$/.test(lBruteTrim) ? lBruteTrim : lBruteTrim.replace(/^[^\p{L}\p{N}]+/u, '')).trim();
                     if (l.length === 0) { vuLigneVide = true; continue; }
                     lignes.push(l);
                     ligneEspaceAvant.push(lignes.length > 1 ? vuLigneVide : false);
@@ -1703,7 +1714,19 @@
                         // confondu à tort avec la cote alors qu'un vrai nombre plus court, mais
                         // plus à droite, était le bon.
                         const resteSansParenthesesPourChiffres = resteSansParentheses;
-                        const candidats = [...resteSansParenthesesPourChiffres.matchAll(/(?<!\d)(\d{1,4})(?!\d)/g)]
+                        // Exige que le nombre candidat ne soit PAS collé à une lettre (ni avant :
+                        // "\p{L}", ni bien sûr un autre chiffre) — sinon un simple SUFFIXE de
+                        // catégorie ("U23") ou la fin d'un CODE DE MARCHÉ ("DNB1", "DNB2", "AH1"...)
+                        // se fait élire à tort "cote sans point décimal" (bug réel constaté, alerte
+                        // réelle Nicaragua U23 - Trinidad and Tobago U23, Volley-ball, DNB1/DNB2) :
+                        // le "23" de "U23" ou le "2" de "DNB2" était pris pour la cote, empêchant
+                        // TOUTE tentative de lecture de la vraie cote sur la ligne suivante (cette
+                        // branche est prioritaire sur le filet `mCoteSuivante` plus bas) — la cote
+                        // affichée devenait fausse (2.3 au lieu de 1.85, 2 au lieu de 2.23) ET le nom
+                        // du match/la ligue se retrouvaient tronqués ou pollués par du texte hors
+                        // sujet. Une vraie cote reconstituable est TOUJOURS isolée par un espace (ou
+                        // en tout début de ligne), jamais collée directement à une lettre.
+                        const candidats = [...resteSansParenthesesPourChiffres.matchAll(/(?<![\d\p{L}])(\d{1,4})(?!\d)/gu)]
                             .filter(m => m[1].length > 1 || parseInt(m[1], 10) >= 2); // exclut un "0"/"1" isolé, jamais une vraie cote
                         const meilleur = candidats.length ? candidats[candidats.length - 1] : null;
                         if (meilleur) {
@@ -1794,6 +1817,43 @@
                                     .replace(/\s+[^\x00-\x7F]{1,3}\s*$/, '')
                                     .replace(/\bx{1,2}([12])\b/gi, 'X$1')
                                     .trim();
+                                // Rien avant la cote sur la ligne suivante (elle ne contient QUE
+                                // la cote — ex. "1.85", "2.23-") : le marché n'est alors PAS sur
+                                // cette ligne suivante mais bien sur la ligne ACTUELLE, juste après
+                                // le nom du match (bug réel constaté, alerte réelle Nicaragua U23 -
+                                // Trinidad and Tobago U23, Volley-ball, marchés DNB1/DNB2 : la cote
+                                // seule sur sa propre ligne empêchait jusqu'ici toute tentative
+                                // d'extraction du marché, qui restait alors collé en fin de nom de
+                                // match affiché, ex. "...Tobago DNB1"). On exige que le marché
+                                // candidat contienne au moins UN CHIFFRE — jamais un simple sigle
+                                // d'équipe tout en majuscules comme "KT" dans "Suwon KT" (alerte
+                                // réelle Anyang Jungkwanjang/KGC, où ce même filet aurait sinon
+                                // amputé le nom du match à tort) : tous les marchés réels rencontrés
+                                // jusqu'ici en fin de ligne SANS cote sur cette même ligne portent un
+                                // chiffre (DNB1, DNB2, X2, AH1(-0.5)...).
+                                if (!avantCote) {
+                                    const mMarcheActuelle = reste.match(/(?<=^|\s|\))([A-Z0-9]{1,4}(?:\s?\([^)]{0,15}\))*)\s*$/);
+                                    if (mMarcheActuelle && mMarcheActuelle[1] && /\d/.test(mMarcheActuelle[1]) && !estResiduLettreSeule(mMarcheActuelle[1])) {
+                                        marche = corrigerPointMarche(mMarcheActuelle[1], meta.sport);
+                                        reste = reste.slice(0, mMarcheActuelle.index).trim();
+                                    } else {
+                                        // Même filet de repli que la branche principale (voir plus
+                                        // haut, `resteSansResidu`) : un résidu court (icône mal lue,
+                                        // 1-2 caractères) collé juste après un marché NU empêche
+                                        // l'ancrage en fin de chaîne exigé ci-dessus (bug réel
+                                        // constaté : "DNB2 f" — le "f" résiduel après "DNB2"
+                                        // empêchait toute détection, laissant "DNB2 f" collé en fin
+                                        // de nom de match affiché).
+                                        const resteSansResiduActuel = reste.replace(/\s+[a-zA-Z0-9]{1,2}\s*$/, '').trim();
+                                        if (resteSansResiduActuel !== reste) {
+                                            const mMarcheActuelle2 = resteSansResiduActuel.match(/(?<=^|\s|\))([A-Z0-9]{1,4}(?:\s?\([^)]{0,15}\))*)\s*$/);
+                                            if (mMarcheActuelle2 && mMarcheActuelle2[1] && /\d/.test(mMarcheActuelle2[1]) && !estResiduLettreSeule(mMarcheActuelle2[1])) {
+                                                marche = corrigerPointMarche(mMarcheActuelle2[1], meta.sport);
+                                                reste = resteSansResiduActuel.slice(0, mMarcheActuelle2.index).trim();
+                                            }
+                                        }
+                                    }
+                                }
                                 const mMarcheSuivante = avantCote.match(/(?<=^|\s|\))([A-Z0-9]{1,4}(?:\s?\([^)]{0,15}\))*)\s*$/);
                                 if (mMarcheSuivante && mMarcheSuivante[1] && !estResiduLettreSeule(mMarcheSuivante[1])) {
                                     let marcheTexte = mMarcheSuivante[1];
@@ -1904,7 +1964,22 @@
                         // nom du match — la 2e joueuse disparaissait purement et simplement.
                         const ressembleLigue = (l2) => l2.includes('.') || SPORTS_CONNUS.some(s => normaliserNomSport(l2).includes(normaliserNomSport(s)));
                         const apresSuivante = lignes[i + 2] || '';
-                        if (!ressembleLigue(suivante) && /^[a-zà-öø-ÿ]{2,20}(\s+[a-zà-öø-ÿ]{2,20}){0,3}(\s*\+[a-zà-öø-ÿ]{1,10})?(\s*\([^)]{2,20}\))?$/i.test(suivante.trim()) && ressembleLigue(apresSuivante)) {
+                        // Deux formes de continuation supplémentaires tolérées ici (alerte réelle
+                        // Nicaragua U23 - Trinidad and Tobago U23/(Points), Volley-ball, DNB1/DNB2) :
+                        // - un qualificatif de catégorie NU, seul sur sa ligne ("U23", "U-20"...) —
+                        //   le motif normal n'acceptait que des LETTRES, jamais de chiffres, donc
+                        //   "U23" seul échouait le test entier et se faisait élire à tort comme
+                        //   LIGUE complète ("bloc.ligue = 'U23'"), perdant la vraie ligue et
+                        //   amputant le nom du match de ce suffixe pourtant déjà visible sur la
+                        //   carte source ("...Tobago U23").
+                        // - un qualificatif entre parenthèses SEUL sur sa ligne, sans aucun mot
+                        //   devant ("(Points)") — le motif normal exigeait toujours des lettres
+                        //   AVANT la parenthèse, jamais la parenthèse seule en tête de ligne ; bug
+                        //   réel constaté : "(Points)" échouait alors le test et se faisait élire
+                        //   à tort comme ligue, le nom du match perdant purement et simplement son
+                        //   "(" d'ouverture attendu en fin de nom ("...Tobago Points)" au lieu de
+                        //   "...Tobago (Points)").
+                        if (!ressembleLigue(suivante) && (/^[a-zà-öø-ÿ]{2,20}(\s+[a-zà-öø-ÿ]{2,20}){0,3}(\s*\+[a-zà-öø-ÿ]{1,10})?(\s*\([^)]{2,20}\))?$/i.test(suivante.trim()) || /^u-?\d{1,2}$/i.test(suivante.trim()) || /^\([^)]{2,20}\)$/.test(suivante.trim())) && ressembleLigue(apresSuivante)) {
                             bloc.match = (bloc.match + ' ' + suivante).trim();
                             bloc.ligue = apresSuivante.replace(/vv/gi, m => m[0] === m[0].toUpperCase() ? "W" : "w");
                             bloc._ligneIndexLigue = i + 2;

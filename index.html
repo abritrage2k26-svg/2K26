@@ -1451,7 +1451,17 @@
                 // par l'OCR (bug réel constaté). Sans cet ajout, la ligne entière échouait le
                 // test "ressemble à une ligne de match" et le bloc n'était JAMAIS créé — aucun
                 // filet de récupération plus loin ne peut compenser un bloc qui n'existe pas.
-                if (rowMatch && ressembleAUnBookmaker && !l.includes('%') && /\S\s*[-–—⇄≠→#&]\s*\S/.test(rowMatch[2])) {
+                // "æ" est encore une autre variante du même résidu OCR du symbole "⇄" (alerte
+                // réelle Rodolfo Vieira - Robert Bryczek, MMA, bloc PS3838 : "Robert Bryczek æ
+                // Rodolfo Vieira") — sans cet ajout, le bloc PS3838 entier n'était jamais créé
+                // (le côté ps3838 manquait purement et simplement du résumé et du terminal,
+                // laissant l'opération à moitié remplie, un seul côté sur deux).
+                // ATTENTION : contrairement à "#"/"&" (jamais de vraies lettres, donc sans risque
+                // avec zéro espace autour), "æ" EST une vraie lettre qui peut apparaître collée à
+                // l'intérieur d'un vrai nom (ex. "Næss") — on exige donc au moins un vrai espace
+                // ("\s+") de chaque côté de "æ" spécifiquement, dans une alternative séparée,
+                // pour ne jamais confondre une lettre légitime avec ce séparateur résiduel.
+                if (rowMatch && ressembleAUnBookmaker && !l.includes('%') && /\S\s*[-–—⇄≠→#&]\s*\S|\S\s+æ\s+\S/.test(rowMatch[2])) {
                     const bookmaker = rowMatch[1];
                     // Normalise la virgule décimale en point AVANT le filtrage de caractères
                     // ci-dessous (qui ne conserve pas la virgule) — sinon "1,57" devient "1 57"
@@ -1480,8 +1490,15 @@
                     // test "ressemble à une ligne de match" juste au-dessus (aucun des caractères
                     // reconnus n'était présent) et le bloc PS3838 n'était JAMAIS créé, laissant
                     // la cote Pinnacle à "0.00" dans le terminal alors qu'elle était bien lisible
-                    // sur la capture.
+                    // sur la capture. "æ" est encore une autre variante du même résidu (alerte
+                    // réelle Rodolfo Vieira - Robert Bryczek, MMA, bloc PS3838 : "Robert Bryczek
+                    // æ Rodolfo Vieira") — même symptôme, bloc entier manquant sans ce correctif.
+                    // ATTENTION : contrairement à "#"/"&", "æ" est une vraie lettre qui peut être
+                    // collée SANS espace à l'intérieur d'un vrai nom (ex. "Næss") — normalisée
+                    // dans un .replace() séparé qui exige "\s+" (au moins un vrai espace) de
+                    // chaque côté, pour ne jamais couper un tel nom en deux.
                     reste = reste.replace(/(\S)\s*[#&]\s*(\S)/, '$1 - $2');
+                    reste = reste.replace(/(\S)\s+æ\s+(\S)/, '$1 - $2');
                     // Retire un qualificatif de compte entre parenthèses juste après le nom du
                     // bookmaker (ex. "1win (pro)", "1win (life)") — ce n'est jamais le début du
                     // nom du match, sinon il contaminerait la traduction du marché ("Handicap

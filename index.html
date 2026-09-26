@@ -1521,8 +1521,12 @@
                     // gardait ce "KW" parasite en tête, remontant jusqu'au champ "Contexte du
                     // signal" pré-rempli à l'écran — même bouton "copier" que les autres
                     // variantes, juste lu différemment par l'OCR selon la capture.
-                    reste = reste.replace(/^(?:mi|ki|wi|bi|ui|gi|kw|k|m|w|b|u)[^\x00-\x7F]\s+(?=[A-ZÀ-Ý])/i, '').trim();
-                    reste = reste.replace(/^(?:mi|ki|wi|bi|ui|gi|kw|k|m|w|b|u)\s+(?=[A-ZÀ-Ý])/i, '').trim();
+                    // "nu" est une variante supplémentaire (alerte réelle New York Giants -
+                    // Tennessee Titans, bloc 1Win) : "nu New York Giants - Tennessee Titans"
+                    // gardait ce "nu" parasite en tête du nom, jamais un vrai préfixe de club sur
+                    // les ligues suivies par cette stratégie.
+                    reste = reste.replace(/^(?:mi|ki|wi|bi|ui|gi|kw|nu|k|m|w|b|u)[^\x00-\x7F]\s+(?=[A-ZÀ-Ý])/i, '').trim();
+                    reste = reste.replace(/^(?:mi|ki|wi|bi|ui|gi|kw|nu|k|m|w|b|u)\s+(?=[A-ZÀ-Ý])/i, '').trim();
                     // Autre variante de lecture du même bouton "copier" — cette fois rendu en
                     // caractères non-ASCII plutôt qu'en lettres latines parasites (pas la flèche
                     // de mouvement de cote gérée plus loin en fin de ligne : icône différente,
@@ -1953,8 +1957,8 @@
                     // Kalev Cramo" gardait ce "Ki" parasite en tête du nom du match jusqu'à
                     // l'écran ET jusqu'au message envoyé aux abonnés.
                     let matchNettoye = suivante
-                        .replace(/^(?:mi|ki|wi|bi|ui|gi|kw|k|m|w|b|u)[^\x00-\x7F]\s+(?=[A-ZÀ-Ý])/i, '')
-                        .replace(/^(?:mi|ki|wi|bi|ui|gi|kw|k|m|w|b|u)\s+(?=[A-ZÀ-Ý])/i, '')
+                        .replace(/^(?:mi|ki|wi|bi|ui|gi|kw|nu|k|m|w|b|u)[^\x00-\x7F]\s+(?=[A-ZÀ-Ý])/i, '')
+                        .replace(/^(?:mi|ki|wi|bi|ui|gi|kw|nu|k|m|w|b|u)\s+(?=[A-ZÀ-Ý])/i, '')
                         .replace(/^[^\x00-\x7F]{1,3}\s+(?=[A-Z])/, '')
                         // Même confusion OCR "l" ↔ "!" que dans le format "1 ligne" (voir
                         // commentaire associé plus haut) — le repli "2 lignes" sert aux captures

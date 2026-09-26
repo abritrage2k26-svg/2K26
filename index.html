@@ -1525,8 +1525,16 @@
                     // Tennessee Titans, bloc 1Win) : "nu New York Giants - Tennessee Titans"
                     // gardait ce "nu" parasite en tête du nom, jamais un vrai préfixe de club sur
                     // les ligues suivies par cette stratégie.
-                    reste = reste.replace(/^(?:mi|ki|wi|bi|ui|gi|kw|nu|k|m|w|b|u)[^\x00-\x7F]\s+(?=[A-ZÀ-Ý])/i, '').trim();
-                    reste = reste.replace(/^(?:mi|ki|wi|bi|ui|gi|kw|nu|k|m|w|b|u)\s+(?=[A-ZÀ-Ý])/i, '').trim();
+                    // "di" est encore une autre variante (alerte réelle HSV Hamburg - HSG
+                    // Wetzlar, bloc 1xBet) : "di HSV Hamburg - HSG Wetzlar" gardait ce "di"
+                    // parasite en tête du nom.
+                    // Sur cette MÊME alerte, le bloc ps3838 portait "Kïÿ" (K ascii + DEUX
+                    // caractères accentués isolés collés, pas un seul comme "Kï") — la 1re
+                    // regex ci-dessous n'autorisait qu'UN SEUL caractère non-ASCII après le
+                    // préfixe ASCII, donc ne matchait pas du tout ce résidu à 2 caractères
+                    // accentués ; élargi à 1 ou 2 caractères non-ASCII consécutifs.
+                    reste = reste.replace(/^(?:mi|ki|wi|bi|ui|gi|kw|nu|di|k|m|w|b|u)[^\x00-\x7F]{1,2}\s+(?=[A-ZÀ-Ý])/i, '').trim();
+                    reste = reste.replace(/^(?:mi|ki|wi|bi|ui|gi|kw|nu|di|k|m|w|b|u)\s+(?=[A-ZÀ-Ý])/i, '').trim();
                     // Autre variante de lecture du même bouton "copier" — cette fois rendu en
                     // caractères non-ASCII plutôt qu'en lettres latines parasites (pas la flèche
                     // de mouvement de cote gérée plus loin en fin de ligne : icône différente,
@@ -1957,8 +1965,8 @@
                     // Kalev Cramo" gardait ce "Ki" parasite en tête du nom du match jusqu'à
                     // l'écran ET jusqu'au message envoyé aux abonnés.
                     let matchNettoye = suivante
-                        .replace(/^(?:mi|ki|wi|bi|ui|gi|kw|nu|k|m|w|b|u)[^\x00-\x7F]\s+(?=[A-ZÀ-Ý])/i, '')
-                        .replace(/^(?:mi|ki|wi|bi|ui|gi|kw|nu|k|m|w|b|u)\s+(?=[A-ZÀ-Ý])/i, '')
+                        .replace(/^(?:mi|ki|wi|bi|ui|gi|kw|nu|di|k|m|w|b|u)[^\x00-\x7F]{1,2}\s+(?=[A-ZÀ-Ý])/i, '')
+                        .replace(/^(?:mi|ki|wi|bi|ui|gi|kw|nu|di|k|m|w|b|u)\s+(?=[A-ZÀ-Ý])/i, '')
                         .replace(/^[^\x00-\x7F]{1,3}\s+(?=[A-Z])/, '')
                         // Même confusion OCR "l" ↔ "!" que dans le format "1 ligne" (voir
                         // commentaire associé plus haut) — le repli "2 lignes" sert aux captures

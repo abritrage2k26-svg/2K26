@@ -379,6 +379,11 @@
                 </div>
             </div>
 
+            <div id="bandeauSonInactif" class="hidden mx-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl px-5 py-3 flex items-center justify-between gap-3 cursor-pointer not-italic animate-pulse" onclick="debloquerContexteAudio(); majBandeauSonInactif();" title="Le navigateur bloque tout son tant qu'aucun clic n'a eu lieu sur la page — clique ici pour l'activer">
+                <p class="text-[10px] font-black text-rose-400 uppercase">🔇 Son désactivé par le navigateur — clique ici pour l'activer</p>
+                <span class="text-[9px] text-rose-400 underline">Activer →</span>
+            </div>
+
             <div id="bandeauAbonnesRisque" class="hidden mx-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl px-5 py-3 flex items-center justify-between gap-3 cursor-pointer not-italic" onclick="toggleAbonnes()">
                 <p id="bandeauAbonnesRisqueTexte" class="text-[10px] font-black text-amber-400 uppercase"></p>
                 <span class="text-[9px] text-amber-500 underline">Voir →</span>
@@ -923,19 +928,31 @@
         // muets tant que le contexte n'a pas été (re)débloqué depuis — d'où l'impression que
         // "ça marche quand ça veut" : ça marchait UNIQUEMENT juste après une vraie interaction
         // (clic, frappe...), jamais de façon fiable sur un bip déclenché tout seul.
-        // Corrigé à 2 niveaux : ici, on relance systématiquement `ctx.resume()` si le contexte
-        // est suspendu (sans bloquer sur la promesse — le son suit dès que le navigateur
-        // débloque) ; et un écouteur global (voir `debloquerContexteAudio` juste en dessous)
-        // relance ce même réveil à CHAQUE clic/frappe/collage de l'opérateur, pour que le
-        // contexte soit déjà réveillé au moment où un bip purement minuté (bandeaux, etc.) se
-        // déclenche, plutôt que d'attendre le prochain bip pour s'en apercevoir.
-        function jouerBip(frequence, dureeMs) {
+        //
+        // 2ND PASSAGE — bug réel signalé à nouveau par l'utilisateur après ce premier correctif
+        // ("le son ne joue pas du tout dans certains cas") : le premier correctif relançait bien
+        // `ctx.resume()` à chaque bip suspendu, mais un bip appelé PENDANT que le contexte est
+        // encore suspendu était simplement PERDU — jamais rejoué une fois le contexte débloqué.
+        // Plusieurs bips ici se déclenchent dès le CHARGEMENT de la page (les 3 bandeaux
+        // Abonnés/Sauvegarde/Pending, appelés directement dans `window.onload`, avant tout clic
+        // possible de l'opérateur) : sur ce tout premier appel, aucun geste utilisateur n'a
+        // encore eu lieu, donc `resume()` échoue silencieusement (rejeté par la politique
+        // autoplay), et ce bip précis ne sonnait alors plus JAMAIS, même après un clic — puisque
+        // rien ne le rejouait. Corrigé en mettant en FILE D'ATTENTE tout bip demandé pendant que
+        // le contexte est suspendu (5 derniers au maximum, pour ne jamais accumuler indéfiniment
+        // si l'opérateur met du temps à interagir), et en rejouant intégralement cette file dès
+        // que `debloquerContexteAudio` confirme le contexte réveillé (voir plus bas). Un bandeau
+        // visible ("🔇 Son désactivé...") a aussi été ajouté pour rendre ce blocage du navigateur
+        // visible à l'opérateur, au lieu de rester une absence de son totalement silencieuse.
+        window.__bagpasBipsEnAttente = window.__bagpasBipsEnAttente || [];
+
+        // Joue RÉELLEMENT le bip (crée l'oscillateur) — jamais appelée directement en dehors
+        // de `jouerBip` et du rejeu de la file d'attente ci-dessous, pour que TOUT bip passe
+        // par la même vérification d'état du contexte.
+        function jouerBipReel(frequence, dureeMs) {
             try {
-                const AudioCtx = window.AudioContext || window.webkitAudioContext;
-                if (!AudioCtx) return;
-                if (!window.__bagpasAudioCtx) window.__bagpasAudioCtx = new AudioCtx();
                 const ctx = window.__bagpasAudioCtx;
-                if (ctx.state === 'suspended' && typeof ctx.resume === 'function') ctx.resume().catch(() => {});
+                if (!ctx) return;
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
                 osc.frequency.value = frequence;
@@ -948,24 +965,74 @@
             } catch (e) { /* le son n'est qu'un plus, jamais bloquant pour le flux principal */ }
         }
 
+        function jouerBip(frequence, dureeMs) {
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+                if (!window.__bagpasAudioCtx) window.__bagpasAudioCtx = new AudioCtx();
+                const ctx = window.__bagpasAudioCtx;
+                if (ctx.state === 'running') { jouerBipReel(frequence, dureeMs); return; }
+                // Contexte pas encore débloqué : mémorisé pour être rejoué dès que possible
+                // (voir `debloquerContexteAudio`) plutôt que perdu silencieusement.
+                window.__bagpasBipsEnAttente.push({ frequence, dureeMs });
+                if (window.__bagpasBipsEnAttente.length > 5) window.__bagpasBipsEnAttente.shift();
+                if (typeof ctx.resume === 'function') ctx.resume().catch(() => {});
+            } catch (e) { /* le son n'est qu'un plus, jamais bloquant pour le flux principal */ }
+        }
+
         // Réveille (ou crée) le contexte audio partagé dès la moindre interaction de
         // l'opérateur avec la page — voir le commentaire de `jouerBip` ci-dessus pour le bug
         // réel que ça corrige. Rappelé à CHAQUE clic/frappe/collage (pas une seule fois), un
         // contexte déjà "running" acceptant un `resume()` sans effet ni coût perceptible, alors
         // qu'un contexte retombé suspendu (onglet remis au premier plan après une longue
         // absence, par exemple) a justement besoin d'être réveillé à nouveau à ce moment-là.
+        // Rejoue aussi systématiquement toute la file de bips manqués (voir `jouerBip`) dès que
+        // le contexte est confirmé réveillé — y compris quand il l'était déjà (cas normal :
+        // un clic ordinaire pendant l'utilisation, pas un déblocage), pour ne jamais laisser un
+        // bip en attente traîner si `resume()` a fini par aboutir entre deux clics.
         function debloquerContexteAudio() {
             try {
                 const AudioCtx = window.AudioContext || window.webkitAudioContext;
                 if (!AudioCtx) return;
                 if (!window.__bagpasAudioCtx) window.__bagpasAudioCtx = new AudioCtx();
                 const ctx = window.__bagpasAudioCtx;
-                if (ctx.state === 'suspended' && typeof ctx.resume === 'function') ctx.resume().catch(() => {});
+                const rejouerFileAttente = () => {
+                    if (ctx.state !== 'running') return;
+                    const enAttente = window.__bagpasBipsEnAttente;
+                    window.__bagpasBipsEnAttente = [];
+                    enAttente.forEach(b => jouerBipReel(b.frequence, b.dureeMs));
+                    majBandeauSonInactif();
+                };
+                if (ctx.state === 'suspended' && typeof ctx.resume === 'function') {
+                    ctx.resume().then(rejouerFileAttente).catch(() => {});
+                } else {
+                    rejouerFileAttente();
+                }
             } catch (e) { /* best-effort, jamais bloquant */ }
         }
         ['click', 'keydown', 'touchstart', 'paste'].forEach(evt => {
             document.addEventListener(evt, debloquerContexteAudio, { passive: true });
         });
+
+        // Bandeau visible tant que le contexte audio n'est pas encore débloqué — rend le
+        // blocage du navigateur visible à l'opérateur au lieu d'un silence total sans
+        // explication (bug réel signalé : "le son ne joue pas du tout dans certains cas").
+        // Se cache dès que le contexte passe "running" (après un clic n'importe où sur la
+        // page, ou un clic direct sur ce bandeau — voir son onclick).
+        function majBandeauSonInactif() {
+            const bandeau = document.getElementById('bandeauSonInactif');
+            if (!bandeau) return;
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) { bandeau.classList.add('hidden'); return; }
+            // Crée le contexte partagé ici aussi s'il n'existe pas encore (ex. tout premier
+            // appel au chargement, avant qu'aucun bip n'ait eu l'occasion d'en créer un) — pour
+            // que l'état affiché soit exact dès le tout premier rendu de ce bandeau, jamais un
+            // faux "activé" par absence de contexte à vérifier.
+            if (!window.__bagpasAudioCtx) window.__bagpasAudioCtx = new AudioCtx();
+            const ctx = window.__bagpasAudioCtx;
+            if (ctx.state === 'running') bandeau.classList.add('hidden');
+            else bandeau.classList.remove('hidden');
+        }
 
         // Bip UNE SEULE FOIS à la transition "capital suffisant" → "capital insuffisant" —
         // jamais à chaque frappe pendant la saisie (validerProfitMin() tourne en continu sur
@@ -4234,6 +4301,12 @@
             majBandeauAbonnesRisque();
             majBandeauSauvegarde();
             majBandeauOperationsPending();
+            // Bandeau "son désactivé" — vérifié immédiatement au chargement (le contexte
+            // audio est quasi toujours suspendu à ce stade, aucun clic n'a encore eu lieu),
+            // ET réévalué à chaque intervalle 60s ci-dessous, au cas où le contexte retombe
+            // suspendu de lui-même (onglet en arrière-plan) sans qu'un nouveau clic survienne
+            // entre-temps pour le révéler à nouveau.
+            majBandeauSonInactif();
             // Ces 3 bandeaux (et leurs bips associés) dépendent tous d'une condition qui
             // évolue avec le TEMPS QUI PASSE (un abonné qui entre dans la fenêtre J-7, une
             // sauvegarde qui devient "en retard", une opération PENDING qui traîne) — pas
@@ -4258,6 +4331,7 @@
                 majBandeauAbonnesRisque();
                 majBandeauSauvegarde();
                 majBandeauOperationsPending();
+                majBandeauSonInactif();
                 envoyerRappelAbonnesTelegram();
             }, 60000);
             envoyerRappelAbonnesTelegram();

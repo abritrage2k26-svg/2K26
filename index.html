@@ -660,7 +660,7 @@
                     </div>
                     <div class="w-full bg-slate-900 h-1 rounded-full overflow-hidden"><div id="timerBar" class="bg-emerald-500 h-full w-full"></div></div>
                     
-                    <div class="grid grid-cols-2 gap-4">
+                    <div id="gridBoxesExec" class="grid grid-cols-2 gap-4">
                         <div id="boxSoft" class="glass p-8 rounded-[3rem] border-2 border-emerald-600 space-y-4">
                             <div id="div1X" class="cursor-pointer copy-active" onclick="copierIndiv('1X')"><p class="text-[9px] font-black text-blue-300 uppercase mb-1">1. MISE 1XBET</p><p id="res1X" class="text-4xl font-mono font-black">0</p></div>
                             <div id="divM" class="cursor-pointer copy-active" onclick="copierIndiv('M')"><p class="text-[9px] font-black text-blue-600 uppercase mb-1">2. MISE 1WIN</p><p id="resM" class="text-4xl font-mono font-black">0</p></div>
@@ -4276,6 +4276,10 @@
                 document.getElementById('labelPin').innerText = `3. MISE ${bkCible === '1xbet' ? '1XBET' : '1WIN'} (CFA)`;
             }
             document.getElementById('boxPin').classList.remove('locked-pin');
+            // Un SAUVETAGE utilise TOUJOURS cette boîte (la mise de cible, Pinnacle ou l'autre
+            // soft) — la réafficher inconditionnellement, au cas où l'opération précédente
+            // l'avait masquée (arb 100% entre softs, voir majVisibiliteBoitePin).
+            majVisibiliteBoitePin(true);
             document.getElementById('coteSecu').innerText = "MODE : SAUVETAGE";
             document.getElementById('resProfit').innerText   = profitSauv.toLocaleString() + " CFA";
             document.getElementById('resProfit').className   = "text-4xl font-black " + (profitSauv >= 0 ? "text-emerald-400" : "text-red-400");
@@ -4524,7 +4528,13 @@
                               })()
                             : h.winner==='n'
                                 ? `<span class="text-purple-400 mr-2">[3ÈME/${(h.soft3||'--').toUpperCase()}]</span> <span class="font-black text-white">${(h.pCfa||0).toLocaleString()}</span>`
-                                : `<span class="${h.winner==='s'?'text-blue-500':'text-red-500'} mr-2">[${(nomCampGagnant(h)||(h.winner==='s'?'SOFT':'PIN')).toUpperCase()}]</span> <span class="font-black text-white">${(h.pCfa||0).toLocaleString()}</span>`;
+                                // Couleur du camp gagnant "P" (côté droit) généralisée sur le VRAI bookmaker
+                                // (bkDroitJournal, déjà utilisé plus bas pour la devise/montant) plutôt que sur
+                                // un rouge câblé en dur — bug réel constaté : dans un arb 100% entre softs
+                                // (bkFixe='1xbet' ou '1win'), le côté "P" gagnant est en réalité un SOFT, mais
+                                // s'affichait quand même en rouge (couleur réservée à Pinnacle partout ailleurs
+                                // dans l'appli), ce qui laissait croire à tort qu'un bookmaker soft était Pinnacle.
+                                : `<span class="${h.winner==='s'?'text-blue-500':(bkDroitJournal(h)==='pinnacle'?'text-red-500':'text-blue-600')} mr-2">[${(nomCampGagnant(h)||(h.winner==='s'?'SOFT':'PIN')).toUpperCase()}]</span> <span class="font-black text-white">${(h.pCfa||0).toLocaleString()}</span>`;
                 const modeColor = h.type==='SAUVETAGE'?'text-red-400':h.issues===3?'text-purple-400':'text-slate-300';
                 const issuesBadge = h.issues===3 ? '<span class="text-purple-400 text-[7px]"> [3I]</span>' : '';
                 const aAlerte = !!h.alMatch;
@@ -4969,16 +4979,19 @@
                 document.getElementById('resN').style.lineHeight = '';
                 document.getElementById('resN').className = "text-4xl font-mono font-black text-purple-400";
                 document.getElementById('labelN').innerText = '3. MISE NUL';
-                // Boîte "Pinnacle" toujours affichée (comme en 3 issues) : soit la vraie mise
-                // Pinnacle si bkFixe l'utilise, soit "PINNACLE NON UTILISÉ" pour un arb 100%
-                // entre softs — même convention déjà établie en 3 issues (voir plus bas),
-                // jamais besoin d'inventer un nouvel état d'affichage.
+                // 3ème boîte (#boxPin) : affichée avec la vraie mise Pinnacle si bkFixe l'utilise,
+                // sinon complètement MASQUÉE pour un arb 100% entre softs (voir
+                // majVisibiliteBoitePin) — son contenu ferait double emploi avec les mises déjà
+                // montrées dans #boxSoft (div1X/divM). Demande explicite de l'utilisateur : "il
+                // doit avoir que ce qu'il y a à cliquer selon les issues".
                 if (bkFixe === 'pinnacle') {
                     document.getElementById('labelPin').innerText = '3. MISE PINNACLE (€)';
                     document.getElementById('resP').innerText = mPE.toFixed(2);
+                    majVisibiliteBoitePin(true);
                 } else {
-                    document.getElementById('labelPin').innerText = 'PINNACLE NON UTILISÉ';
+                    document.getElementById('labelPin').innerText = 'BOÎTE INUTILISÉE';
                     document.getElementById('resP').innerText = '0.00';
+                    majVisibiliteBoitePin(false);
                 }
 
                 // Généralisé sur mPC (équivalent CFA du côté fixe, valable quel que soit le
@@ -5074,6 +5087,7 @@
                 if(aggPinEur > 0) {
                     document.getElementById('labelPin').innerText = `${agg1X>0||aggM>0?'4':'3'}. MISE PINNACLE (€)`;
                     document.getElementById('resP').innerText = aggPinEur.toFixed(2);
+                    majVisibiliteBoitePin(true);
                     // Si aucun wallet soft n'est utilisé (tous côtés sur Pinnacle),
                     // il n'y a rien à copier avant — déverrouiller directement.
                     if(agg1X === 0 && aggM === 0) {
@@ -5084,7 +5098,10 @@
                 } else {
                     document.getElementById('boxPin').classList.add('locked-pin');
                     document.getElementById('resP').innerText = '0.00';
-                    document.getElementById('labelPin').innerText = 'PINNACLE NON UTILISÉ';
+                    // Aucune jambe Pinnacle dans cette opération 3 issues : boîte complètement
+                    // masquée (voir majVisibiliteBoitePin), même principe qu'en 2 issues.
+                    document.getElementById('labelPin').innerText = 'BOÎTE INUTILISÉE';
+                    majVisibiliteBoitePin(false);
                 }
 
                 document.getElementById('coteSecu').innerText = 'ARB: ' + (arb*100).toFixed(2) + '%';
@@ -5218,6 +5235,22 @@
         //    euros (voir la branche 3 issues de lancerArbitrage), jamais un soft.
         // Renvoie null si la boîte n'a AUCUNE vraie cible dans cette opération (arb 100%
         // entre softs, "PINNACLE NON UTILISÉ").
+        // Bascule l'affichage même de la 3ème boîte (#boxPin), pas seulement son libellé —
+        // demande explicite de l'utilisateur : "il doit avoir que ce qu'il y a à cliquer selon
+        // les issues". Avant ce correctif, la boîte restait visible (grisée, verrouillée,
+        // libellée "BOÎTE INUTILISÉE") même quand elle n'affiche jamais rien de nouveau — son
+        // contenu ferait doublon avec la mise déjà montrée dans #boxSoft (div1X/divM), ce qui
+        // n'est justement rien à cliquer. Elle est maintenant complètement masquée dans ce cas,
+        // et la grille repasse d'une colonne à deux (#boxSoft prend toute la largeur) — jamais
+        // besoin d'afficher un emplacement vide pour montrer qu'il n'y a rien à y faire.
+        function majVisibiliteBoitePin(estUtilisee) {
+            const boxPin = document.getElementById('boxPin');
+            const grille = document.getElementById('gridBoxesExec');
+            if (!boxPin || !grille) return;
+            boxPin.classList.toggle('hidden', !estUtilisee);
+            grille.classList.toggle('grid-cols-2', estUtilisee);
+            grille.classList.toggle('grid-cols-1', !estUtilisee);
+        }
         function bkCibleBoitePinnacle() {
             if(!op) return null;
             if(op.type === 'SAUVETAGE') return op.sauvBkCible || 'pinnacle';
@@ -5921,6 +5954,9 @@
                 // de page, désynchronisé de la vraie cible de l'opération en cours.
                 sauvBkCible = op.sauvBkCible || 'pinnacle';
                 majBoutonsSauvBkCible();
+                // Un SAUVETAGE utilise TOUJOURS cette boîte — la réafficher inconditionnellement
+                // au cas où l'opération précédente (arb 100% entre softs) l'avait masquée.
+                majVisibiliteBoitePin(true);
                 document.getElementById('coteSecu').innerText = "MODE : SAUVETAGE";
                 document.getElementById('resProfit').innerText = (op.pCfa||0).toLocaleString() + " CFA";
                 // "wait" par défaut ici aussi (voir la même correction dans calculerSauvetage) :
@@ -5939,17 +5975,21 @@
                 document.getElementById('resN').style.fontSize = '0.7rem';
                 document.getElementById('resN').style.lineHeight = '1.4';
                 document.getElementById('resN').innerText = op.sides3.map((s,i) => `${i+1}:${(s.bk||'--').toUpperCase()} @${s.cote} = ${s.bk==='pinnacle'?(s.eur||0).toFixed(2)+'€':(s.cfa||0).toLocaleString()+' CFA'}`).join(' | ');
-                // Même logique "Pinnacle non utilisé" qu'à la création (voir lancerArbitrage,
+                // Même logique "boîte inutilisée" qu'à la création (voir lancerArbitrage,
                 // branche 3 issues) — sans elle, restaurer après rechargement une opération à
                 // 3 issues sans Pinnacle affichait "0.00" sous le libellé encore générique
-                // "MISE PINNACLE (€)" au lieu du message clair "PINNACLE NON UTILISÉ".
+                // "MISE PINNACLE (€)". Libellé de repli sans mention de "PINNACLE" (bug réel
+                // signalé : ce mot ne doit jamais apparaître dans une opération où Pinnacle
+                // n'est pas réellement présent).
                 const aggPinEurRestaure = op.sides3.reduce((s, x) => s + (x.bk === 'pinnacle' ? (x.eur||0) : 0), 0);
                 if (aggPinEurRestaure > 0) {
                     document.getElementById('labelPin').innerText = `${(op.m1X>0||op.mM>0)?'4':'3'}. MISE PINNACLE (€)`;
                     document.getElementById('resP').innerText = aggPinEurRestaure.toFixed(2);
+                    majVisibiliteBoitePin(true);
                 } else {
-                    document.getElementById('labelPin').innerText = 'PINNACLE NON UTILISÉ';
+                    document.getElementById('labelPin').innerText = 'BOÎTE INUTILISÉE';
                     document.getElementById('resP').innerText = '0.00';
+                    majVisibiliteBoitePin(false);
                 }
                 document.getElementById('coteSecu').innerText = 'RESTAURÉ';
                 document.getElementById('resProfit').innerText = "-- CFA (à valider)";
@@ -5962,12 +6002,21 @@
                 document.getElementById('res1X').innerText = (op.m1X||0).toLocaleString();
                 document.getElementById('resM').innerText  = (op.mM||0).toLocaleString();
                 // Côté droit généralisé (op.bk2) — même principe qu'à la création (voir
-                // lancerArbitrage) : euros si Pinnacle, CFA sinon. Bug réel constaté sans
-                // cette distinction : restaurer après rechargement un arb 100% entre softs
-                // affichait "0.00" à la place du vrai montant CFA engagé sur l'autre soft.
+                // lancerArbitrage). Bug réel trouvé en corrigeant la visibilité de cette boîte
+                // (voir majVisibiliteBoitePin) : pour un arb 100% entre softs, ce code affichait
+                // ENCORE le montant CFA de l'autre soft dans #boxPin — en DOUBLE de ce qui est
+                // déjà montré dans #boxSoft (div1X/divM, tous deux visibles puisque m1X et mM
+                // sont positifs) — au lieu de masquer la boîte comme à la création.
                 const droitEstPin = (op.bk2 || 'pinnacle') === 'pinnacle';
-                document.getElementById('resP').innerText = droitEstPin ? op.miseP_Eur : Math.round(op.miseP_Cfa||0).toLocaleString('fr-FR');
-                document.getElementById('labelPin').innerText = droitEstPin ? '3. MISE PINNACLE (€)' : `3. MISE ${(op.bk2||'').toUpperCase()} (CFA)`;
+                if (droitEstPin) {
+                    document.getElementById('resP').innerText = op.miseP_Eur;
+                    document.getElementById('labelPin').innerText = '3. MISE PINNACLE (€)';
+                    majVisibiliteBoitePin(true);
+                } else {
+                    document.getElementById('resP').innerText = '0.00';
+                    document.getElementById('labelPin').innerText = 'BOÎTE INUTILISÉE';
+                    majVisibiliteBoitePin(false);
+                }
                 // Resynchronise le toggle du côté fixe avec l'opération restaurée — même
                 // raison que pour le sauvetage juste au-dessus.
                 bkFixe = op.bk2 || 'pinnacle';

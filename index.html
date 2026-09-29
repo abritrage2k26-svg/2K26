@@ -2172,17 +2172,25 @@
                     // texte. Le même motif de reconnaissance (`.{0,15}?` + nombre décimal en fin
                     // de ligne) est donc réutilisé ici pour exclure cette ligne de la ligue.
                     // Une cote ENTIÈRE (ex. "2", sans aucune décimale) apparaît parfois SEULE sur
-                    // sa ligne, avec seulement un résidu d'icône non-ASCII collé ("2°") — bug réel
-                    // constaté (alerte réelle Tennis, DNB1/DNB2, Chihiro Muramatsu - Yuhan Liu,
-                    // 1xbet vs ps3838) : le marché "DNB1" avait totalement disparu de l'OCR, ne
-                    // laissant que "2°" seul sur sa ligne. Comme TOUS les motifs ci-dessous
-                    // exigeaient un point/virgule décimal, "2°" n'était reconnu ni comme
-                    // marché+cote (la ligne se faisait alors élire à tort comme LIGUE entière,
-                    // perdant la vraie ligue juste en dessous), ni comme cote dans la boucle
-                    // suivante (cote resté `null`). Motif volontairement strict : uniquement un
-                    // nombre entier de 1-2 chiffres, SEUL sur toute la ligne (jamais un marché
-                    // devant), pour ne jamais confondre avec un vrai "TO(2)" ou un score.
-                    const ligneEstCoteEntiereSeule = (l2) => /^\d{1,2}\s*[^\x00-\x7F]{0,2}\s*$/.test((l2 || '').trim());
+                    // sa ligne, avec seulement un résidu d'icône collé — bug réel constaté SOUS
+                    // DEUX FORMES DIFFÉRENTES sur la MÊME alerte réelle recollée deux fois de
+                    // suite (Tennis, DNB1/DNB2, Chihiro Muramatsu - Yuhan Liu, 1xbet vs ps3838) :
+                    // "2°" (résidu non-ASCII) la première fois, "2e" (résidu ASCII, une simple
+                    // lettre) la seconde — la même icône lue différemment par l'OCR d'une
+                    // capture à l'autre. Un 1er correctif n'a toléré QUE le résidu non-ASCII,
+                    // laissant "2e" tomber dans exactement le même bug (marché "DNB1" disparu de
+                    // l'OCR, seule la cote entière restant sur sa ligne). Élargi pour tolérer
+                    // aussi un résidu ASCII, même convention que le filet "cote orpheline" plus
+                    // bas (`[^\d%]` — tout sauf un chiffre ou un '%', jamais un vrai marché
+                    // derrière un nombre entier isolé sur SA PROPRE ligne). Comme TOUS les
+                    // motifs ci-dessous exigeaient un point/virgule décimal, une cote entière
+                    // isolée n'était reconnue ni comme marché+cote (la ligne se faisait alors
+                    // élire à tort comme LIGUE entière, perdant la vraie ligue juste en dessous),
+                    // ni comme cote dans la boucle suivante (cote resté `null`). Motif
+                    // volontairement strict : uniquement un nombre entier de 1-2 chiffres, SEUL
+                    // sur toute la ligne (jamais un marché devant), pour ne jamais confondre avec
+                    // un vrai "TO(2)" ou un score.
+                    const ligneEstCoteEntiereSeule = (l2) => /^\d{1,2}\s*[^\d%]{0,3}\s*$/.test((l2 || '').trim());
                     const nettoyerLigne = (l2) => l2.replace(/vv/gi, m => m[0] === m[0].toUpperCase() ? 'W' : 'w').replace(/\s*\+[a-zà-öø-ÿ]{1,10}\b/gi, ' ').replace(/\s+/g, ' ').trim();
                     const matchDecimalSeul = (lignes[i + 2] || '').match(/^(.*?)\s*\d+[.,]\d{1,3}\s*$/);
                     // Distingue 2 mises en page différentes pour cette ligne i+2 :

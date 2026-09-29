@@ -2054,6 +2054,20 @@
                             bloc.ligue = apresSuivante.replace(/vv/gi, m => m[0] === m[0].toUpperCase() ? "W" : "w");
                             bloc._ligneIndexLigue = i + 2;
                             i += 2; // consomme le reste du nom ET la vraie ligue, pas seulement l'un des deux
+                            // La ligue elle-même peut ENCORE être coupée sur une 3ème ligne (même
+                            // rattachement "League" seul que dans la branche ci-dessous, voir
+                            // suiteLigue) — bug réel constaté (alerte réelle HC Spartak Moscow -
+                            // HC Traktor Chelyabinsk, Hockey sur glace) : cette branche-ci (nom du
+                            // match ET ligue combinés sur plusieurs lignes) ne faisait pas ce
+                            // rattachement, perdant "League" alors que la branche "else" juste en
+                            // dessous le gère déjà correctement pour le cas plus simple.
+                            const suiteLigueApresRecollementNom = (lignes[i + 1] || '').trim();
+                            if (/^[a-zà-öø-ÿ]{2,20}$/i.test(suiteLigueApresRecollementNom) && !detecterRoleBookmaker(suiteLigueApresRecollementNom)
+                                && !RE_SHOW_ALL.test(suiteLigueApresRecollementNom) && !RE_EDGE_HEADER.test(suiteLigueApresRecollementNom)) {
+                                bloc.ligue = (bloc.ligue + ' ' + suiteLigueApresRecollementNom).trim();
+                                bloc._ligneIndexLigue = i + 1;
+                                i += 1;
+                            }
                         } else {
                             bloc.ligue = suivante.replace(/vv/gi, m => m[0] === m[0].toUpperCase() ? "W" : "w");
                             bloc._ligneIndexLigue = i + 1;

@@ -2462,24 +2462,77 @@
             return meta;
         }
 
+        // Propose une cote calculée à partir de l'edge annoncé par BreakingBet et des AUTRES
+        // cotes déjà connues du même signal, pour le bloc où l'OCR n'a rien pu lire — demande
+        // explicite de l'utilisateur : refus de laisser une cote illisible sans alternative
+        // (ex. alerte réelle Tennis Chihiro Muramatsu - Yuhan Liu, bloc ps3838 : OCR "4 22" trop
+        // dégradé pour être reconstitué directement, cf. tests/cote-entiere-seule-repli-2lignes.test.mjs).
+        //
+        // Formule (même principe que la confirmation croisée edge/cotes ci-dessus, ancrée sur la
+        // définition même de l'edge d'un arbitrage) : edge% = (1/Σ(1/cote_i) − 1) × 100, résolue
+        // pour l'UNIQUE cote inconnue :
+        //   cote_manquante = 1 / (1/(1+edge/100) − Σ(1/cote_connue))
+        //
+        // Retourne null (jamais une valeur inventée affichée) si :
+        //  - l'edge annoncé est absent/illisible ;
+        //  - plus d'un bloc manque de cote sur ce signal (formule non résoluble : trop d'inconnues
+        //    à la fois — jamais vu en pratique, mais on ne devine jamais à l'aveugle) ;
+        //  - le résultat implique une cote impossible (≤ 1 ou non finie) — edge incohérent avec
+        //    les cotes déjà connues (OCR douteux ailleurs), mieux vaut ne rien proposer.
+        function calculerCoteSuggereeEdge(meta, blocManquant) {
+            if (!meta.edgePct || isNaN(parseFloat(meta.edgePct))) return null;
+            const edge = parseFloat(meta.edgePct);
+            const blocsSansCote = meta.blocs.filter(b => b.cote == null);
+            if (blocsSansCote.length !== 1 || blocsSansCote[0] !== blocManquant) return null;
+            const autresCotes = meta.blocs.filter(b => b !== blocManquant && b.cote != null).map(b => b.cote);
+            if (autresCotes.length !== meta.blocs.length - 1) return null;
+            const sommeAutres = autresCotes.reduce((s, c) => s + (1 / c), 0);
+            const denom = (1 / (1 + edge / 100)) - sommeAutres;
+            if (!(denom > 0)) return null;
+            const coteSuggeree = 1 / denom;
+            if (!isFinite(coteSuggeree) || coteSuggeree <= 1) return null;
+            return Math.round(coteSuggeree * 100) / 100;
+        }
+
+        // Valide manuellement une cote suggérée (voir calculerCoteSuggereeEdge ci-dessus) —
+        // jamais utilisée dans les calculs de mise tant que ce clic n'a pas eu lieu (demande
+        // explicite de l'utilisateur : uniquement après validation manuelle, jamais en
+        // silencieux/automatique). Ré-applique l'alerte en mode "reapplication" pour remplir le
+        // bon champ de cote et rafraîchir le résumé sans rejouer le bip de collage, redémarrer le
+        // chrono de latence, ni retoucher l'horodatage `captureTs` (l'alerte n'est pas nouvelle).
+        function accepterCoteSuggeree(index, valeur) {
+            if (!alerteMeta || !alerteMeta.blocs[index]) return;
+            alerteMeta.blocs[index].cote = valeur;
+            alerteMeta.blocs[index].coteSuggereeAcceptee = true;
+            appliquerAlerteMeta(alerteMeta, alerteMeta.confianceOcr, alerteMeta.confianceHeure, { reapplication: true });
+        }
+
         // Applique les données extraites : pré-remplit le terminal (2 ou 3 issues selon
         // le nombre de bookmakers détectés dans l'alerte) et affiche un résumé de vérification.
         // `confiance` (0-100, optionnel) = score de confiance global renvoyé par Tesseract.
-        function appliquerAlerteMeta(meta, confiance, confianceHeure) {
-            // Horodatage du collage — point de départ de la latence de diffusion (voir
-            // lancerArbitrage). C'est le temps entre "l'alerte BreakingBet est visible" et
-            // "le signal part sur Telegram" qui détermine si les abonnés reçoivent encore
-            // une cote exploitable ou une cote déjà bougée.
-            meta.captureTs = Date.now();
+        // `options.reapplication` (voir accepterCoteSuggeree ci-dessus) : ré-application suite à
+        // la validation manuelle d'une cote suggérée, PAS une nouvelle alerte collée — n'y touche
+        // ni au bip de collage, ni au chrono de latence, ni à `captureTs`.
+        function appliquerAlerteMeta(meta, confiance, confianceHeure, options) {
+            options = options || {};
+            if (!options.reapplication) {
+                // Horodatage du collage — point de départ de la latence de diffusion (voir
+                // lancerArbitrage). C'est le temps entre "l'alerte BreakingBet est visible" et
+                // "le signal part sur Telegram" qui détermine si les abonnés reçoivent encore
+                // une cote exploitable ou une cote déjà bougée.
+                meta.captureTs = Date.now();
+            }
             alerteMeta = meta;
-            // Bip court dès qu'une nouvelle alerte OCR est appliquée — un des événements
-            // sonores demandés explicitement par l'utilisateur (au-delà du compte à rebours),
-            // utile si l'écran n'est pas regardé au moment précis du collage.
-            jouerBip(750, 100);
-            // Démarre le chrono de latence visible à l'écran (voir demarrerChronoLatenceOcr) —
-            // tant que l'opération n'est pas lancée, l'opérateur voit en continu depuis combien
-            // de temps cette alerte traîne, pas seulement après coup dans le graphique.
-            demarrerChronoLatenceOcr();
+            if (!options.reapplication) {
+                // Bip court dès qu'une nouvelle alerte OCR est appliquée — un des événements
+                // sonores demandés explicitement par l'utilisateur (au-delà du compte à rebours),
+                // utile si l'écran n'est pas regardé au moment précis du collage.
+                jouerBip(750, 100);
+                // Démarre le chrono de latence visible à l'écran (voir demarrerChronoLatenceOcr) —
+                // tant que l'opération n'est pas lancée, l'opérateur voit en continu depuis combien
+                // de temps cette alerte traîne, pas seulement après coup dans le graphique.
+                demarrerChronoLatenceOcr();
+            }
             const nb = meta.blocs.length;
             let cotesUtilisees = []; // pour le contrôle de cohérence edge annoncé vs edge calculé
 
@@ -2721,6 +2774,7 @@
             // construireMessageTelegram()/hist pour la propagation au signal + au journal.
             meta.incertitudesDonnees = incertitudesDonnees;
             meta.confianceOcr = typeof confiance === 'number' ? confiance : null;
+            meta.confianceHeure = typeof confianceHeure === 'number' ? confianceHeure : null;
 
             const resume = document.getElementById('ocrResume');
             if (resume) {
@@ -2731,7 +2785,20 @@
                     const couleur = role === 'pinnacle' ? 'text-red-400' : role ? 'text-blue-400' : 'text-slate-500';
                     const sideTag = `<span class="text-slate-600">[${nb >= 3 ? 'Côté' : 'Bloc'} ${i + 1}]</span> `;
                     const nomAffiche = role ? (BK_NOMS_AFFICHES[role] || b.bookmaker) : b.bookmaker;
-                    return `<p>${sideTag}<span class="${couleur} font-black uppercase">${escapeHtml(nomAffiche)}${role ? '' : ' (non reconnu — à assigner manuellement)'}</span> — ${escapeHtml(b.match)} <span class="text-slate-600">${escapeHtml(b.ligue)}</span> — ${escapeHtml(b.marche) || '?'} @ ${b.cote ?? '?'}</p>`;
+                    // Cote manquante (OCR trop dégradé pour ce bloc, ex. "4 22") : propose une
+                    // cote calculée à partir de l'edge annoncé + l'autre cote connue plutôt que de
+                    // laisser un "?" sans alternative — jamais utilisée tant que le clic de
+                    // validation n'a pas eu lieu (voir accepterCoteSuggeree/calculerCoteSuggereeEdge).
+                    let affichageCote;
+                    if (b.cote != null) {
+                        affichageCote = b.cote;
+                    } else {
+                        const suggestion = calculerCoteSuggereeEdge(meta, b);
+                        affichageCote = suggestion != null
+                            ? `? <button type="button" onclick="accepterCoteSuggeree(${i}, ${suggestion})" class="underline decoration-dotted decoration-amber-400 text-amber-400 hover:text-amber-300 font-black not-italic" title="Cote déduite de l'edge annoncé (${escapeHtml(meta.edgePct)}%) et de l'autre cote connue — jamais utilisée pour les calculs tant que tu n'as pas cliqué">(suggestion ${suggestion} — cliquer pour l'utiliser)</button>`
+                            : '?';
+                    }
+                    return `<p id="blocLigne${i}">${sideTag}<span class="${couleur} font-black uppercase">${escapeHtml(nomAffiche)}${role ? '' : ' (non reconnu — à assigner manuellement)'}</span> — ${escapeHtml(b.match)} <span class="text-slate-600">${escapeHtml(b.ligue)}</span> — ${escapeHtml(b.marche) || '?'} @ ${affichageCote}</p>`;
                 }).join('');
                 resume.innerHTML = `
                     ${ligneAvertissements}

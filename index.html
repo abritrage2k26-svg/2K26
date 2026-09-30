@@ -2494,6 +2494,27 @@
             return Math.round(coteSuggeree * 100) / 100;
         }
 
+        // Conserve la position de scroll pendant `fn()` — bug réel signalé par l'utilisateur :
+        // à chaque choix de cote suggérée ou de marché dans le résumé de vérification (voir
+        // accepterCoteSuggeree/validerMarcheChoisi ci-dessous), il se retrouvait projeté tout en
+        // bas de l'écran vers le bouton "Lancer", alors même qu'il lui restait d'autres champs à
+        // renseigner. Cause : ces deux actions remplacent ENTIÈREMENT le HTML du résumé
+        // (#ocrResume), y compris l'élément (bouton/<select>) qui avait le focus au moment du
+        // clic/de la sélection — sur mobile, la fermeture du picker natif d'un <select> combinée
+        // à la disparition de l'élément focus peut faire défiler la page vers un autre élément
+        // (souvent le bouton "Lancer", plus bas dans le DOM). Un simple `scrollTo` synchrone
+        // après coup ne suffit pas toujours à contrer ce réajustement, qui peut survenir après ce
+        // tour de boucle JS — un second `requestAnimationFrame` vient donc corriger la position
+        // une fois ce réajustement du navigateur passé.
+        function conserverPositionScroll(fn) {
+            const y = window.scrollY;
+            fn();
+            window.scrollTo(0, y);
+            if (typeof window.requestAnimationFrame === 'function') {
+                window.requestAnimationFrame(() => window.scrollTo(0, y));
+            }
+        }
+
         // Extrait les noms des deux équipes depuis la chaîne de match ("Équipe A – Équipe B")
         // pour libeller la liste déroulante de choix de marché ci-dessous — délibérément
         // dupliqué (pas mutualisé avec traduireMarche, qui a le même besoin) pour ne jamais
@@ -2604,10 +2625,12 @@
             } else {
                 marche = type;
             }
-            alerteMeta.blocs[index].marche = marche;
-            alerteMeta.blocs[index].marcheReconstituee = false;
-            alerteMeta.blocs[index].marcheChoisiManuel = true;
-            appliquerAlerteMeta(alerteMeta, alerteMeta.confianceOcr, alerteMeta.confianceHeure, { reapplication: true });
+            conserverPositionScroll(() => {
+                alerteMeta.blocs[index].marche = marche;
+                alerteMeta.blocs[index].marcheReconstituee = false;
+                alerteMeta.blocs[index].marcheChoisiManuel = true;
+                appliquerAlerteMeta(alerteMeta, alerteMeta.confianceOcr, alerteMeta.confianceHeure, { reapplication: true });
+            });
         }
 
         // Valide manuellement une cote suggérée (voir calculerCoteSuggereeEdge ci-dessus) —
@@ -2618,9 +2641,11 @@
         // chrono de latence, ni retoucher l'horodatage `captureTs` (l'alerte n'est pas nouvelle).
         function accepterCoteSuggeree(index, valeur) {
             if (!alerteMeta || !alerteMeta.blocs[index]) return;
-            alerteMeta.blocs[index].cote = valeur;
-            alerteMeta.blocs[index].coteSuggereeAcceptee = true;
-            appliquerAlerteMeta(alerteMeta, alerteMeta.confianceOcr, alerteMeta.confianceHeure, { reapplication: true });
+            conserverPositionScroll(() => {
+                alerteMeta.blocs[index].cote = valeur;
+                alerteMeta.blocs[index].coteSuggereeAcceptee = true;
+                appliquerAlerteMeta(alerteMeta, alerteMeta.confianceOcr, alerteMeta.confianceHeure, { reapplication: true });
+            });
         }
 
         // Applique les données extraites : pré-remplit le terminal (2 ou 3 issues selon

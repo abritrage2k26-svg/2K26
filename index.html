@@ -2625,12 +2625,13 @@
             } else {
                 marche = type;
             }
-            conserverPositionScroll(() => {
-                alerteMeta.blocs[index].marche = marche;
-                alerteMeta.blocs[index].marcheReconstituee = false;
-                alerteMeta.blocs[index].marcheChoisiManuel = true;
-                appliquerAlerteMeta(alerteMeta, alerteMeta.confianceOcr, alerteMeta.confianceHeure, { reapplication: true });
-            });
+            // La conservation de la position de scroll est désormais assurée directement par
+            // appliquerAlerteMeta elle-même (voir conserverPositionScroll ci-dessus, qui
+            // l'enveloppe universellement) — inutile de l'envelopper une seconde fois ici.
+            alerteMeta.blocs[index].marche = marche;
+            alerteMeta.blocs[index].marcheReconstituee = false;
+            alerteMeta.blocs[index].marcheChoisiManuel = true;
+            appliquerAlerteMeta(alerteMeta, alerteMeta.confianceOcr, alerteMeta.confianceHeure, { reapplication: true });
         }
 
         // Valide manuellement une cote suggérée (voir calculerCoteSuggereeEdge ci-dessus) —
@@ -2641,11 +2642,12 @@
         // chrono de latence, ni retoucher l'horodatage `captureTs` (l'alerte n'est pas nouvelle).
         function accepterCoteSuggeree(index, valeur) {
             if (!alerteMeta || !alerteMeta.blocs[index]) return;
-            conserverPositionScroll(() => {
-                alerteMeta.blocs[index].cote = valeur;
-                alerteMeta.blocs[index].coteSuggereeAcceptee = true;
-                appliquerAlerteMeta(alerteMeta, alerteMeta.confianceOcr, alerteMeta.confianceHeure, { reapplication: true });
-            });
+            // La conservation de la position de scroll est désormais assurée directement par
+            // appliquerAlerteMeta elle-même (voir conserverPositionScroll ci-dessus, qui
+            // l'enveloppe universellement) — inutile de l'envelopper une seconde fois ici.
+            alerteMeta.blocs[index].cote = valeur;
+            alerteMeta.blocs[index].coteSuggereeAcceptee = true;
+            appliquerAlerteMeta(alerteMeta, alerteMeta.confianceOcr, alerteMeta.confianceHeure, { reapplication: true });
         }
 
         // Applique les données extraites : pré-remplit le terminal (2 ou 3 issues selon
@@ -2654,7 +2656,20 @@
         // `options.reapplication` (voir accepterCoteSuggeree ci-dessus) : ré-application suite à
         // la validation manuelle d'une cote suggérée, PAS une nouvelle alerte collée — n'y touche
         // ni au bip de collage, ni au chrono de latence, ni à `captureTs`.
+        //
+        // Bug réel signalé par l'utilisateur : coller une alerte le faisait descendre tout seul
+        // jusqu'au bouton "Lancer l'arbitrage", au lieu de rester sur le résumé de vérification
+        // qu'il vient de coller. Cause : `selectSoft()` (appelée plus bas pour pré-sélectionner
+        // le bookmaker soft détecté) appelle `document.getElementById('coteS').focus()` — ce
+        // champ de cote se trouve dans le terminal, plus bas sur la page que le résumé, et
+        // focus() sur mobile fait défiler la page pour amener le champ focalisé dans l'écran.
+        // Toute la fonction est donc enveloppée dans `conserverPositionScroll` (déjà utilisée
+        // pour le même problème lors du choix d'une cote suggérée / d'un marché) — universel :
+        // couvre aussi bien un collage frais que toute ré-application ultérieure.
         function appliquerAlerteMeta(meta, confiance, confianceHeure, options) {
+            conserverPositionScroll(() => appliquerAlerteMetaInterne(meta, confiance, confianceHeure, options));
+        }
+        function appliquerAlerteMetaInterne(meta, confiance, confianceHeure, options) {
             options = options || {};
             if (!options.reapplication) {
                 // Horodatage du collage — point de départ de la latence de diffusion (voir

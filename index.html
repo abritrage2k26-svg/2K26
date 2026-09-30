@@ -2494,6 +2494,105 @@
             return Math.round(coteSuggeree * 100) / 100;
         }
 
+        // Extrait les noms des deux équipes depuis la chaîne de match ("Équipe A – Équipe B")
+        // pour libeller la liste déroulante de choix de marché ci-dessous — délibérément
+        // dupliqué (pas mutualisé avec traduireMarche, qui a le même besoin) pour ne jamais
+        // risquer de faire varier le texte des messages Telegram déjà couverts par les tests
+        // existants en touchant à une fonction partagée.
+        function nomsEquipesPourMarche(matchStr) {
+            const teams = (matchStr || '').split(/\s*[-–—]\s*/);
+            return { eqA: teams[0] ? teams[0].trim() : "l'équipe 1", eqB: teams[1] ? teams[1].trim() : "l'équipe 2" };
+        }
+
+        // Types de marché gérés par la liste déroulante de choix manuel ci-dessous — reprend
+        // exactement les codes déjà reconnus par traduireMarche(), pour que le message Telegram
+        // envoyé reste toujours compréhensible quel que soit le chemin (OCR ou choix manuel) par
+        // lequel bloc.marche a été rempli. Les 5 derniers ("AH1"/"AH2"/"AH0"/"TO"/"TU") exigent
+        // une ligne numérique en plus du type (voir MARCHE_TYPES_AVEC_LIGNE).
+        const MARCHE_TYPES_AVEC_LIGNE = ['AH1', 'AH2', 'AH0', 'TO', 'TU'];
+
+        // Décompose un code de marché déjà lu ("AH1(-1.5)", "DNB2"...) en {type, ligne} pour
+        // PRÉ-SÉLECTIONNER la liste déroulante sur ce qui a été déduit automatiquement (voir le
+        // filet de sécurité "marché manquant" plus haut, qui pose `marcheReconstituee`) — demande
+        // explicite de l'utilisateur : la déduction auto reste pré-sélectionnée, mais visible et
+        // modifiable dans la liste plutôt que silencieusement cachée derrière un texte figé.
+        function decomposerMarchePourListe(marche) {
+            const m = (marche || '').toUpperCase().replace(/\s+/g, '').trim();
+            if (['1', 'X', 'N', '2', '1X', 'X2', '12', 'DNB1', 'DNB2', 'BTTS', 'GG', 'NG'].includes(m)) {
+                return { type: m === 'N' ? 'X' : (m === 'GG' ? 'BTTS' : m), ligne: '' };
+            }
+            let mo = m.match(/^(AH[012])\(?(-?\d+(?:\.\d+)?)\)?$/);
+            if (mo) return { type: mo[1], ligne: mo[2] };
+            mo = m.match(/^(TO|TU)\(?(\d+(?:\.\d+)?)\)?$/);
+            if (mo) return { type: mo[1], ligne: mo[2] };
+            return { type: '', ligne: '' };
+        }
+
+        // Construit le HTML des <option> de la liste déroulante de choix manuel de marché,
+        // couvrant TOUS les types gérés par traduireMarche() (demande explicite de
+        // l'utilisateur : "une liste déroulante avec tous les types de marchés").
+        function optionsMarchePourListe(eqA, eqB, typeActuel) {
+            const optsFixes = [
+                ['1', `1 — Victoire ${eqA}`],
+                ['X', 'X — Match nul'],
+                ['2', `2 — Victoire ${eqB}`],
+                ['1X', `1X — Double chance (${eqA} ou nul)`],
+                ['X2', `X2 — Double chance (nul ou ${eqB})`],
+                ['12', `12 — Double chance (${eqA} ou ${eqB})`],
+                ['DNB1', `DNB1 — Victoire ${eqA} (nul remboursé)`],
+                ['DNB2', `DNB2 — Victoire ${eqB} (nul remboursé)`],
+                ['BTTS', 'BTTS — Les deux équipes marquent'],
+                ['NG', 'NG — Au moins une équipe ne marque pas'],
+            ];
+            const optsLigne = [
+                ['AH1', `AH1 — Handicap ${eqA} (ligne à préciser)`],
+                ['AH2', `AH2 — Handicap ${eqB} (ligne à préciser)`],
+                ['AH0', 'AH0 — Handicap nul (ligne à préciser)'],
+                ['TO', 'TO — Plus de (total, ligne à préciser)'],
+                ['TU', 'TU — Moins de (total, ligne à préciser)'],
+            ];
+            const opt = (v, label) => `<option value="${v}"${v === typeActuel ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+            return `<option value=""${typeActuel ? '' : ' selected'}>-- Choisir le marché --</option>`
+                + optsFixes.map(([v, l]) => opt(v, l)).join('')
+                + optsLigne.map(([v, l]) => opt(v, l)).join('');
+        }
+
+        // Affiche/masque le champ de ligne numérique selon que le type choisi en a besoin
+        // (Handicap asiatique / Total) ou non (marchés fixes : 1X2, DNB, BTTS...).
+        function majChampLigneMarche(index) {
+            const select = document.getElementById('marcheSelect' + index);
+            const ligneInput = document.getElementById('marcheLigne' + index);
+            if (!select || !ligneInput) return;
+            ligneInput.classList.toggle('hidden', !MARCHE_TYPES_AVEC_LIGNE.includes(select.value));
+        }
+
+        // Valide manuellement le marché choisi dans la liste déroulante (voir
+        // optionsMarchePourListe ci-dessus) — jamais utilisé dans le message envoyé aux abonnés
+        // tant que ce clic n'a pas eu lieu, même quand une valeur était déjà PRÉ-sélectionnée par
+        // déduction automatique (demande explicite de l'utilisateur, même principe que
+        // accepterCoteSuggeree : une déduction reste une déduction tant qu'elle n'est pas
+        // confirmée par un geste explicite).
+        function validerMarcheChoisi(index) {
+            if (!alerteMeta || !alerteMeta.blocs[index]) return;
+            const select = document.getElementById('marcheSelect' + index);
+            if (!select) return;
+            const type = select.value;
+            if (!type) { afficherToast('Choisis un marché dans la liste avant de valider.', 'error'); return; }
+            let marche;
+            if (MARCHE_TYPES_AVEC_LIGNE.includes(type)) {
+                const ligneInput = document.getElementById('marcheLigne' + index);
+                const ligne = ligneInput ? ligneInput.value.trim() : '';
+                if (!ligne || isNaN(parseFloat(ligne))) { afficherToast('Indique la ligne (ex. -1.5 ou 2.5) avant de valider.', 'error'); return; }
+                marche = `${type}(${parseFloat(ligne)})`;
+            } else {
+                marche = type;
+            }
+            alerteMeta.blocs[index].marche = marche;
+            alerteMeta.blocs[index].marcheReconstituee = false;
+            alerteMeta.blocs[index].marcheChoisiManuel = true;
+            appliquerAlerteMeta(alerteMeta, alerteMeta.confianceOcr, alerteMeta.confianceHeure, { reapplication: true });
+        }
+
         // Valide manuellement une cote suggérée (voir calculerCoteSuggereeEdge ci-dessus) —
         // jamais utilisée dans les calculs de mise tant que ce clic n'a pas eu lieu (demande
         // explicite de l'utilisateur : uniquement après validation manuelle, jamais en
@@ -2798,7 +2897,26 @@
                             ? `? <button type="button" onclick="accepterCoteSuggeree(${i}, ${suggestion})" class="underline decoration-dotted decoration-amber-400 text-amber-400 hover:text-amber-300 font-black not-italic" title="Cote déduite de l'edge annoncé (${escapeHtml(meta.edgePct)}%) et de l'autre cote connue — jamais utilisée pour les calculs tant que tu n'as pas cliqué">(suggestion ${suggestion} — cliquer pour l'utiliser)</button>`
                             : '?';
                     }
-                    return `<p id="blocLigne${i}">${sideTag}<span class="${couleur} font-black uppercase">${escapeHtml(nomAffiche)}${role ? '' : ' (non reconnu — à assigner manuellement)'}</span> — ${escapeHtml(b.match)} <span class="text-slate-600">${escapeHtml(b.ligue)}</span> — ${escapeHtml(b.marche) || '?'} @ ${affichageCote}</p>`;
+                    // Marché manquant (rien lu par l'OCR sur ce côté) OU seulement déduit
+                    // automatiquement de l'autre côté (`marcheReconstituee`, voir le filet de
+                    // sécurité plus haut) : liste déroulante de choix manuel, PRÉ-sélectionnée sur
+                    // la déduction quand il y en a une, mais toujours visible et modifiable —
+                    // jamais un texte figé qu'on croirait "déjà bon" (demande explicite de
+                    // l'utilisateur). Un vrai marché lu directement par l'OCR (non reconstitué)
+                    // continue de s'afficher en texte simple, comme avant.
+                    let affichageMarche;
+                    if (b.marche && !b.marcheReconstituee) {
+                        affichageMarche = escapeHtml(b.marche);
+                    } else {
+                        const { eqA, eqB } = nomsEquipesPourMarche(b.match);
+                        const decomp = decomposerMarchePourListe(b.marche);
+                        const ligneVisible = MARCHE_TYPES_AVEC_LIGNE.includes(decomp.type);
+                        affichageMarche = `<select id="marcheSelect${i}" onchange="majChampLigneMarche(${i})" class="bg-black/40 border border-slate-700 rounded text-[9px] px-1 py-0.5 text-amber-400 font-black not-italic align-middle">${optionsMarchePourListe(eqA, eqB, decomp.type)}</select> `
+                            + `<input type="number" step="0.25" id="marcheLigne${i}" value="${escapeHtml(decomp.ligne)}" placeholder="ligne" class="${ligneVisible ? '' : 'hidden '}w-14 bg-black/40 border border-slate-700 rounded text-[9px] px-1 py-0.5 text-amber-400 font-black not-italic align-middle">`
+                            + ` <button type="button" onclick="validerMarcheChoisi(${i})" class="underline decoration-dotted decoration-amber-400 text-amber-400 hover:text-amber-300 font-black not-italic">Valider</button>`
+                            + (b.marcheReconstituee ? ` <span class="text-slate-600 italic">(déduit auto — à vérifier)</span>` : '');
+                    }
+                    return `<p id="blocLigne${i}">${sideTag}<span class="${couleur} font-black uppercase">${escapeHtml(nomAffiche)}${role ? '' : ' (non reconnu — à assigner manuellement)'}</span> — ${escapeHtml(b.match)} <span class="text-slate-600">${escapeHtml(b.ligue)}</span> — ${affichageMarche} @ ${affichageCote}</p>`;
                 }).join('');
                 resume.innerHTML = `
                     ${ligneAvertissements}

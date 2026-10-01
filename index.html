@@ -1773,8 +1773,13 @@
                     // entre 2 noms est toujours au MILIEU, jamais en tête), donc ce tiret
                     // optionnel ne risque aucun faux positif. Élargi pour le tolérer, avec ou
                     // sans lui, devant n'importe quelle variante déjà connue.
-                    reste = reste.replace(/^(?:[-–—]\s+)?(?:mi|ki|wi|bi|ui|gi|kw|nu|di|ni|k|m|w|b|u)[^\x00-\x7F]{1,2}\s+(?=[A-ZÀ-Ý])/i, '').trim();
-                    reste = reste.replace(/^(?:[-–—]\s+)?(?:mi|ki|wi|bi|ui|gi|kw|nu|di|ni|k|m|w|b|u)\s+(?=[A-ZÀ-Ý])/i, '').trim();
+                    // "r" est encore une autre variante (alerte réelle Philip Sekulic - Herman
+                    // Hoeyeraal, Tennis, bloc ps3838 — signalée via le bouton "📋 Signaler") :
+                    // "R Philip Sekulic (Games) - Herman Hoeyeraal (Games)" gardait ce "R"
+                    // parasite en tête du nom, jamais un vrai préfixe de club/joueur sur les
+                    // ligues suivies par cette stratégie.
+                    reste = reste.replace(/^(?:[-–—]\s+)?(?:mi|ki|wi|bi|ui|gi|kw|nu|di|ni|k|m|w|b|u|r)[^\x00-\x7F]{1,2}\s+(?=[A-ZÀ-Ý])/i, '').trim();
+                    reste = reste.replace(/^(?:[-–—]\s+)?(?:mi|ki|wi|bi|ui|gi|kw|nu|di|ni|k|m|w|b|u|r)\s+(?=[A-ZÀ-Ý])/i, '').trim();
                     // Autre variante de lecture du même bouton "copier" — cette fois rendu en
                     // caractères non-ASCII plutôt qu'en lettres latines parasites (pas la flèche
                     // de mouvement de cote gérée plus loin en fin de ligne : icône différente,
@@ -2323,8 +2328,8 @@
                     && suivante.replace(/[^a-z0-9]/gi, '').length >= 4;
                 if (estNomBk && estLigneMatch && !suivanteEstRangeeUnique) {
                     // Même résidu isolé d'icône ("copier le nom du match") que dans le format
-                    // "1 ligne" ci-dessus (mi/ki/wi/bi/ui/gi/kw/k/m/w/b/u, éventuellement suivi
-                    // d'un accent isolé lu comme non-ASCII) — ce nettoyage n'existait QUE dans
+                    // "1 ligne" ci-dessus (mi/ki/wi/bi/ui/gi/kw/nu/di/ni/k/m/w/b/u/r,
+                    // éventuellement suivi d'un accent isolé lu comme non-ASCII) — ce nettoyage n'existait QUE dans
                     // le format "1 ligne" (`reste`), jamais ici dans le repli "2 lignes", alors
                     // que ce repli sert justement aux captures les PLUS dégradées, là où ce
                     // résidu est le plus susceptible d'apparaître. Bug réel constaté : alerte
@@ -2332,8 +2337,8 @@
                     // Kalev Cramo" gardait ce "Ki" parasite en tête du nom du match jusqu'à
                     // l'écran ET jusqu'au message envoyé aux abonnés.
                     let matchNettoye = suivante
-                        .replace(/^(?:[-–—]\s+)?(?:mi|ki|wi|bi|ui|gi|kw|nu|di|ni|k|m|w|b|u)[^\x00-\x7F]{1,2}\s+(?=[A-ZÀ-Ý])/i, '')
-                        .replace(/^(?:[-–—]\s+)?(?:mi|ki|wi|bi|ui|gi|kw|nu|di|ni|k|m|w|b|u)\s+(?=[A-ZÀ-Ý])/i, '')
+                        .replace(/^(?:[-–—]\s+)?(?:mi|ki|wi|bi|ui|gi|kw|nu|di|ni|k|m|w|b|u|r)[^\x00-\x7F]{1,2}\s+(?=[A-ZÀ-Ý])/i, '')
+                        .replace(/^(?:[-–—]\s+)?(?:mi|ki|wi|bi|ui|gi|kw|nu|di|ni|k|m|w|b|u|r)\s+(?=[A-ZÀ-Ý])/i, '')
                         .replace(/^[^\x00-\x7F]{1,3}\s+(?=[A-Z])/, '')
                         // Même confusion OCR "l" ↔ "!" que dans le format "1 ligne" (voir
                         // commentaire associé plus haut) — le repli "2 lignes" sert aux captures

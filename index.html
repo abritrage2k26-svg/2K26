@@ -430,7 +430,15 @@
             <div class="grid grid-cols-3 gap-4">
                 <div class="glass p-5 rounded-[2rem] border-l-4 border-blue-400"><p id="bal1xbet" class="text-2xl font-black">0</p><p class="text-[9px] uppercase text-blue-400 font-black italic">Wallet 1xBet</p></div>
                 <div class="glass p-5 rounded-[2rem] border-l-4 border-blue-600"><p id="bal1Win" class="text-2xl font-black">0</p><p class="text-[9px] uppercase text-blue-600 font-black italic">Wallet 1Win</p></div>
-                <div class="glass p-5 rounded-[2rem] border-l-4 border-red-600"><p id="balPin" class="text-2xl font-black">0.00 €</p><p class="text-[9px] uppercase text-red-600 font-black italic">Wallet Pinnacle</p></div>
+                <!-- Même solde Pinnacle, affiché EN PLUS en FCFA juste en dessous (demande explicite
+                     de l'utilisateur : "le solde de Pinnacle est en euro donc je veux l'équivalent en
+                     fcfa en dessous") — même principe déjà appliqué dans le Journal pour #editP/#editPEur
+                     (voir rafraichirVueEnsemble), mais ici dans l'autre sens : le terminal affichait déjà
+                     l'euro, c'est le FCFA qui manquait en dessous. Pure vue dérivée de `bP` (la valeur
+                     réellement stockée, toujours en CFA) via le même taux live `tx` — jamais éditable
+                     ici (contrairement à #editPEur dans le Journal), ce bloc du terminal n'ayant jamais
+                     été un champ de saisie. -->
+                <div class="glass p-5 rounded-[2rem] border-l-4 border-red-600"><p id="balPin" class="text-2xl font-black">0.00 €</p><p id="balPinCfa" class="text-xs font-bold text-red-600/70">0 CFA</p><p class="text-[9px] uppercase text-red-600 font-black italic">Wallet Pinnacle</p></div>
             </div>
 
             <div id="ocrZone" contenteditable="true" onpaste="handleBreakingBetPaste(event)" onkeydown="if(!(event.ctrlKey||event.metaKey)) event.preventDefault();" class="glass p-5 rounded-[2rem] border-2 border-dashed border-emerald-600/30 cursor-text focus:outline-none focus:border-emerald-500 transition-all">
@@ -5931,7 +5939,7 @@
             if(dailyCount >= getDailyGoal()) document.getElementById('missionOverlay').style.display = 'flex';
         }
 
-        function rafraichir() { document.getElementById('bal1xbet').innerText = Math.floor(b1X).toLocaleString() + " CFA"; document.getElementById('bal1Win').innerText = Math.floor(bM).toLocaleString() + " CFA"; document.getElementById('balPin').innerText = (bP/tx).toFixed(2) + " €"; actualiserMiseAuto(); sauvegarder(); }
+        function rafraichir() { document.getElementById('bal1xbet').innerText = Math.floor(b1X).toLocaleString() + " CFA"; document.getElementById('bal1Win').innerText = Math.floor(bM).toLocaleString() + " CFA"; document.getElementById('balPin').innerText = (bP/tx).toFixed(2) + " €"; document.getElementById('balPinCfa').innerText = Math.round(bP).toLocaleString('fr-FR') + " CFA"; actualiserMiseAuto(); sauvegarder(); }
         
         // Affiche/masque l'avertissement "l'arrondi des mises mange l'edge". `pP` = profit
         // % réel après arrondi (ou null si pas de surebet valide à évaluer), `edgeTheorique`

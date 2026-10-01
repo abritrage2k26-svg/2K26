@@ -103,6 +103,30 @@
         }
     </script>
 
+    <!-- Écran "Appuie pour démarrer" — demande explicite de l'utilisateur ("Tap unique qui
+         déclenche tous les sons de l'app") : un unique tap, plein écran, impossible à rater,
+         dès le tout premier chargement, qui débloque IMMÉDIATEMENT le contexte audio partagé
+         pour TOUTE la session — au lieu de compter sur un clic "par hasard" ailleurs dans
+         l'app, qui pouvait arriver tard (ou jamais, si l'opérateur se contente de regarder
+         l'écran sans rien toucher avant la 1ère alerte). AUCUN navigateur ne permet de jouer
+         du son sans AUCUNE interaction (règle de sécurité anti-autoplay universelle,
+         incontournable en JavaScript) — ceci est donc le minimum technique : UN geste, le
+         plus tôt et le plus visible possible, jamais redemandé ensuite pour le reste de la
+         session (voir `validerEcranDemarrageAudio`/`majEcranDemarrageAudio`). Le bandeau
+         discret #bandeauSonInactif reste en repli pour le cas rare où le contexte retomberait
+         suspendu plus tard dans la session (veille, onglet en arrière-plan...) — on évite d'y
+         réafficher cet écran plein écran, trop intrusif en pleine utilisation.
+         z-[99999] : au-dessus de #bossScreen (99998) et du contenu normal, mais sous
+         #accessGate (999999) pour ne jamais passer devant le mot de passe quand il est encore
+         affiché. -->
+    <div id="ecranDemarrageAudio" class="hidden fixed inset-0 z-[99999] flex items-center justify-center bg-slate-950/95 p-6 cursor-pointer not-italic" onclick="validerEcranDemarrageAudio()">
+        <div class="text-center">
+            <p class="text-4xl mb-4">👆</p>
+            <p class="text-emerald-500 font-black uppercase text-sm tracking-widest">Appuie n'importe où pour démarrer</p>
+            <p class="text-slate-500 text-[10px] uppercase mt-2">Active les alertes sonores pour toute la session</p>
+        </div>
+    </div>
+
     <div id="bossScreen">
         <div class="g-top"><span>Gmail</span><span>Images</span><div class="bg-gray-200 rounded-full w-8 h-8 flex items-center justify-center text-xs font-bold text-gray-600 italic">F</div></div>
         <div class="flex flex-col items-center mt-[15vh]">
@@ -398,7 +422,7 @@
                     <input type="number" id="tauxInput" step="1" oninput="verrouillerTauxManuel(this.value)" class="bg-transparent w-14 text-white border-b border-dashed border-slate-600 outline-none focus:border-emerald-500 text-center not-italic">
                     <button id="btnTauxLock" onclick="toggleTauxLock()" class="text-[10px]" title="Basculer taux auto / manuel">🔓</button>
                     · <button onclick="toggleAbonnes()" class="text-violet-400 hover:text-violet-300">👥 Abonnés</button>
-                    · <button onclick="basculerAffichage()" class="text-emerald-400 hover:text-emerald-300" title="Ouvrir le journal (raccourci clavier : Échap)">📊 Journal</button>
+                    · <button onclick="basculerAffichage()" class="text-emerald-400 hover:text-emerald-300" title="Ouvrir le journal (raccourci clavier : Échap)">📊 Journal<span id="badgeAnomaliesBouton" class="hidden text-amber-400"></span></button>
                 </div>
             </div>
 
@@ -422,6 +446,15 @@
                 <span class="text-[9px] text-purple-400 underline">Résoudre →</span>
             </div>
 
+            <!-- Bandeau + badge "anomalies non traitées" — demande explicite de l'utilisateur
+                 ("ergonomie"), même principe que #bandeauOperationsPending ci-dessus : rend visible
+                 depuis le terminal, sans avoir à ouvrir le Journal, qu'il reste des anomalies
+                 (marché/cotes/edge suspect) pas encore vérifiées — voir majBandeauAnomalies. -->
+            <div id="bandeauAnomalies" class="hidden mx-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl px-5 py-3 flex items-center justify-between gap-3 cursor-pointer not-italic" onclick="basculerAffichage()" title="Ouvre le journal, panneau Anomalies à vérifier">
+                <p id="bandeauAnomaliesTexte" class="text-[10px] font-black text-amber-400 uppercase"></p>
+                <span class="text-[9px] text-amber-400 underline">Vérifier →</span>
+            </div>
+
             <div class="flex gap-8 border-b border-white/5 px-4">
                 <button id="tabStandard" onclick="switchMode('standard')" class="pb-4 text-[10px] font-black uppercase italic tab-active">Calcul Standard</button>
                 <button id="tabSauvetage" onclick="switchMode('sauvetage')" class="pb-4 text-[10px] font-black uppercase italic text-slate-500">Calcul Sauvetage 🚨</button>
@@ -440,6 +473,16 @@
                      été un champ de saisie. -->
                 <div class="glass p-5 rounded-[2rem] border-l-4 border-red-600"><p id="balPin" class="text-2xl font-black">0.00 €</p><p id="balPinCfa" class="text-xs font-bold text-red-600/70">0 CFA</p><p class="text-[9px] uppercase text-red-600 font-black italic">Wallet Pinnacle</p></div>
             </div>
+
+            <!-- Stats du jour, visibles directement sur le terminal — demande explicite de
+                 l'utilisateur ("T'as des propositions d'amélioration ou d'ergonomie ?" → "La
+                 deuxième option"). calculerStatsPeriode (déjà utilisée pour les récaps Telegram,
+                 voir plus bas) est réutilisée telle quelle, bornée à aujourd'hui via
+                 calculerDateDebutPeriode('jour', ...) — jamais besoin d'ouvrir le Journal ni
+                 d'attendre le récap automatique pour ce suivi minimal. Masqué tant qu'aucune
+                 opération n'est clôturée aujourd'hui, pour ne pas afficher une ligne à zéro vide
+                 de sens dès l'ouverture du terminal. -->
+            <div id="statsJourTerminal" class="hidden mx-4 bg-slate-900/40 border border-slate-700/40 rounded-2xl px-5 py-3 text-[10px] font-black uppercase text-slate-400 not-italic"></div>
 
             <div id="ocrZone" contenteditable="true" onpaste="handleBreakingBetPaste(event)" onkeydown="if(!(event.ctrlKey||event.metaKey)) event.preventDefault();" class="glass p-5 rounded-[2rem] border-2 border-dashed border-emerald-600/30 cursor-text focus:outline-none focus:border-emerald-500 transition-all">
                 <div class="flex items-center justify-between gap-4 flex-wrap">
@@ -991,6 +1034,32 @@
                 gain.gain.value = 0.15;
                 osc.connect(gain);
                 gain.connect(ctx.destination);
+                // 3ÈME PASSAGE — bug réel signalé par l'utilisateur : "plus de son du tout" sur
+                // mobile, après un rechargement de page, au bout de quelques alertes collées —
+                // alors que le bandeau "🔇 Son désactivé" ne réapparaît pas (donc ctx.state reste
+                // bien 'running', ce n'est pas un nouveau blocage autoplay). Cause : le minuteur
+                // d'opération rejoue CE bip chaque seconde dès la zone critique (voir
+                // `jouerBip(880, 150)` dans `startTimer`/son tick) — sur plusieurs alertes
+                // collées, ça crée vite des dizaines/centaines de paires oscillateur+gain, jamais
+                // explicitement déconnectées du graphe audio. Le spec Web Audio prévoit une
+                // libération automatique une fois le nœud "terminé", mais WebKit/Safari iOS est
+                // connu pour ne pas le faire de façon fiable en pratique, surtout en rafale
+                // (plusieurs créations par seconde sur une session longue) — le moteur audio finit
+                // par arrêter de produire du son, SANS jamais faire retomber `ctx.state` à
+                // 'suspended' (silence total, invisible pour `majBandeauSonInactif`, qui ne
+                // vérifie que l'état du contexte). Corrigé en déconnectant explicitement les deux
+                // nœuds dès que le bip est terminé (`onended`), plutôt que de compter sur un
+                // ramasse-miettes qui arrive trop tard sur ces navigateurs.
+                // Le handler est posé AVANT `start()`/`stop()` — `stop()` ne fait que
+                // PROGRAMMER l'arrêt à l'instant donné, `onended` ne se déclenche réellement
+                // qu'une fois cet instant atteint, donc l'ordre d'écriture ci-dessous n'a pas
+                // d'incidence en conditions réelles ; mais le poser avant évite tout souci sur un
+                // faux AudioContext de test qui déclencherait `onended` de façon synchrone depuis
+                // `stop()`.
+                osc.onended = () => {
+                    try { osc.disconnect(); } catch (e) {}
+                    try { gain.disconnect(); } catch (e) {}
+                };
                 osc.start();
                 osc.stop(ctx.currentTime + dureeMs / 1000);
             } catch (e) { /* le son n'est qu'un plus, jamais bloquant pour le flux principal */ }
@@ -1063,6 +1132,40 @@
             const ctx = window.__bagpasAudioCtx;
             if (ctx.state === 'running') bandeau.classList.add('hidden');
             else bandeau.classList.remove('hidden');
+        }
+
+        // Écran "Appuie pour démarrer" — demande explicite de l'utilisateur ("Tap unique qui
+        // déclenche tous les sons de l'app"), voir le commentaire HTML de #ecranDemarrageAudio
+        // pour le détail. Affiché UNE SEULE FOIS, au tout premier chargement, tant que le
+        // contexte audio n'est pas déjà débloqué — jamais réaffiché ensuite pour le reste de la
+        // session une fois validé (`window.__bagpasEcranDemarrageTermine`), que le contexte
+        // retombe suspendu ou non entre-temps (repli : le discret #bandeauSonInactif, qui lui
+        // continue d'être réévalué en continu, voir `majBandeauSonInactif`).
+        function majEcranDemarrageAudio() {
+            const ecran = document.getElementById('ecranDemarrageAudio');
+            if (!ecran || window.__bagpasEcranDemarrageTermine) return;
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) { ecran.classList.add('hidden'); return; }
+            if (!window.__bagpasAudioCtx) window.__bagpasAudioCtx = new AudioCtx();
+            if (window.__bagpasAudioCtx.state === 'running') {
+                window.__bagpasEcranDemarrageTermine = true;
+                ecran.classList.add('hidden');
+            } else {
+                ecran.classList.remove('hidden');
+            }
+        }
+
+        // Le tap unique lui-même — débloque le contexte audio (exactement comme n'importe quel
+        // clic ailleurs dans l'app, voir `debloquerContexteAudio`, déjà rappelée en plus via
+        // l'écouteur global 'click' posé sur `document`) ET masque DÉFINITIVEMENT cet écran
+        // pour le reste de la session, qu'il ait réussi ou non à débloquer le contexte du tout
+        // premier coup — il ne doit jamais rester planté devant l'opérateur : un clic suivant
+        // n'importe où dans l'app reste de toute façon couvert par `debloquerContexteAudio`.
+        function validerEcranDemarrageAudio() {
+            window.__bagpasEcranDemarrageTermine = true;
+            const ecran = document.getElementById('ecranDemarrageAudio');
+            if (ecran) ecran.classList.add('hidden');
+            debloquerContexteAudio();
         }
 
         // Bip UNE SEULE FOIS à la transition "capital suffisant" → "capital insuffisant" —
@@ -3107,7 +3210,12 @@
                         const decomp = decomposerMarchePourListe(b.marche);
                         const ligneVisible = MARCHE_TYPES_AVEC_LIGNE.includes(decomp.type);
                         affichageMarche = `<select id="marcheSelect${i}" onchange="majChampLigneMarche(${i})" class="bg-black/40 border border-slate-700 rounded text-[9px] px-1 py-0.5 text-amber-400 font-black not-italic align-middle">${optionsMarchePourListe(eqA, eqB, decomp.type)}</select> `
-                            + `<input type="number" step="0.25" id="marcheLigne${i}" value="${escapeHtml(decomp.ligne)}" placeholder="ligne" class="${ligneVisible ? '' : 'hidden '}w-14 bg-black/40 border border-slate-700 rounded text-[9px] px-1 py-0.5 text-amber-400 font-black not-italic align-middle">`
+                            // Touche Entrée = même geste que le clic sur "Valider" — demande
+                            // explicite de l'utilisateur ("ergonomie") : plus rapide sur mobile,
+                            // où taper la ligne puis aller cliquer un petit bouton séparé est
+                            // pénible. keyCode 13 en plus de key==='Enter' pour les claviers
+                            // virtuels mobiles qui n'envoient pas toujours `key` de façon fiable.
+                            + `<input type="number" step="0.25" id="marcheLigne${i}" value="${escapeHtml(decomp.ligne)}" placeholder="ligne" onkeydown="if(event.key==='Enter'||event.keyCode===13){event.preventDefault();validerMarcheChoisi(${i});}" class="${ligneVisible ? '' : 'hidden '}w-14 bg-black/40 border border-slate-700 rounded text-[9px] px-1 py-0.5 text-amber-400 font-black not-italic align-middle">`
                             + ` <button type="button" onclick="validerMarcheChoisi(${i})" class="underline decoration-dotted decoration-amber-400 text-amber-400 hover:text-amber-300 font-black not-italic">Valider</button>`
                             + (b.marcheReconstituee ? ` <span class="text-slate-600 italic">(déduit auto — à vérifier)</span>` : '');
                     }
@@ -4111,7 +4219,14 @@
             const edgeMoyenAnnonce = opsAvecEdge.length
                 ? (opsAvecEdge.reduce((s, h) => s + parseFloat(h.alEdgePct), 0) / opsAvecEdge.length).toFixed(2)
                 : null;
-            return { nb, gagnees, perdues, sauvetages, roiMoyen, tauxReussite, edgeMoyenAnnonce };
+            // Profit CFA cumulé de la période — ajouté pour le bloc "Stats du jour" affiché
+            // directement sur le terminal (demande explicite de l'utilisateur : "Aujourd'hui :
+            // X opérations · ROI moyen Y% · profit Z CFA"). Les récaps Telegram existants
+            // (construireMessageRecap/construireEnteteJournal) n'utilisent jamais de montant en
+            // CFA par choix (voir leurs commentaires : rien de financier envoyé aux abonnés) —
+            // ce nouveau champ est donc ignoré par eux et réservé à l'affichage interne.
+            const profitCfa = ops.reduce((s, h) => s + (h.pCfa || 0), 0);
+            return { nb, gagnees, perdues, sauvetages, roiMoyen, tauxReussite, edgeMoyenAnnonce, profitCfa };
         }
 
         function construireMessageRecap(titre, emoji, stats, contexte) {
@@ -4786,12 +4901,21 @@
             majBandeauAbonnesRisque();
             majBandeauSauvegarde();
             majBandeauOperationsPending();
+            majBandeauAnomalies();
+            majStatsJour();
             // Bandeau "son désactivé" — vérifié immédiatement au chargement (le contexte
             // audio est quasi toujours suspendu à ce stade, aucun clic n'a encore eu lieu),
             // ET réévalué à chaque intervalle 60s ci-dessous, au cas où le contexte retombe
             // suspendu de lui-même (onglet en arrière-plan) sans qu'un nouveau clic survienne
             // entre-temps pour le révéler à nouveau.
             majBandeauSonInactif();
+            // Écran "Appuie pour démarrer" — vérifié UNE SEULE FOIS ici, au chargement (voir
+            // `majEcranDemarrageAudio` : il se masque lui-même dès que le contexte passe
+            // "running", et ne doit plus jamais réapparaître ensuite pour le reste de la
+            // session une fois validé — donc volontairement absent du setInterval ci-dessous,
+            // contrairement à `majBandeauSonInactif`, son repli discret, lui bien réévalué en
+            // continu).
+            majEcranDemarrageAudio();
             // Ces 3 bandeaux (et leurs bips associés) dépendent tous d'une condition qui
             // évolue avec le TEMPS QUI PASSE (un abonné qui entre dans la fenêtre J-7, une
             // sauvegarde qui devient "en retard", une opération PENDING qui traîne) — pas
@@ -4816,6 +4940,8 @@
                 majBandeauAbonnesRisque();
                 majBandeauSauvegarde();
                 majBandeauOperationsPending();
+                majBandeauAnomalies();
+                majStatsJour();
                 majBandeauSonInactif();
                 envoyerRappelAbonnesTelegram();
             }, 60000);
@@ -4969,6 +5095,8 @@
             document.getElementById('editPEur').value = (bP / tx).toFixed(2);
             updateDynamicFlux('1X', b1X); updateDynamicFlux('M', bM); updateDynamicFlux('P', bP);
             majBandeauOperationsPending();
+            majBandeauAnomalies();
+            majStatsJour();
             construireListeAnomalies();
 
             const sDate = document.getElementById('searchDate').value.toLowerCase();
@@ -7096,6 +7224,55 @@
                 bandeau.classList.remove('hidden');
             } else {
                 bandeau.classList.add('hidden');
+            }
+        }
+
+        // Bandeau + badge "anomalies non traitées" — demande explicite de l'utilisateur
+        // ("ergonomie" : signaler les anomalies depuis le terminal, pas seulement dans le
+        // Journal), même principe que majBandeauOperationsPending ci-dessus, mais SANS bip (une
+        // anomalie n'est jamais urgente comme une opération en attente — pas besoin de sonner).
+        // Compte le total d'anomalies NON traitées sur TOUT le journal (anomaliesNonTraiteesCount,
+        // voir plus haut), affiché à la fois en bandeau (voyant) ET en badge sur le bouton
+        // "📊 Journal" (discret, toujours visible) — demande explicite de l'utilisateur : "Les
+        // deux".
+        function majBandeauAnomalies() {
+            const total = hist.reduce((s, h) => s + anomaliesNonTraiteesCount(h), 0);
+            const bandeau = document.getElementById('bandeauAnomalies');
+            if (bandeau) {
+                if (total > 0) {
+                    document.getElementById('bandeauAnomaliesTexte').innerText = `⚠️ ${total} anomalie${total > 1 ? 's' : ''} non vérifiée${total > 1 ? 's' : ''} dans le journal.`;
+                    bandeau.classList.remove('hidden');
+                } else {
+                    bandeau.classList.add('hidden');
+                }
+            }
+            const badge = document.getElementById('badgeAnomaliesBouton');
+            if (badge) {
+                if (total > 0) {
+                    badge.innerText = ` ⚠️${total}`;
+                    badge.classList.remove('hidden');
+                } else {
+                    badge.classList.add('hidden');
+                }
+            }
+        }
+
+        // Stats du jour visibles directement sur le terminal — demande explicite de
+        // l'utilisateur. Réutilise calculerStatsPeriode (déjà en place pour les récaps/journal
+        // Telegram), bornée à "aujourd'hui" via calculerDateDebutPeriode('jour', ...), exactement
+        // comme publierRecap('jour')/diffuserJournalDetaille('jour') le font déjà. Masqué tant
+        // qu'aucune opération clôturée aujourd'hui (stats.nb === 0), pour éviter une ligne à zéro
+        // vide de sens au tout premier affichage du terminal.
+        function majStatsJour() {
+            const bloc = document.getElementById('statsJourTerminal');
+            if (!bloc) return;
+            const stats = calculerStatsPeriode(calculerDateDebutPeriode('jour', new Date()));
+            if (stats.nb > 0) {
+                const profitTxt = Math.round(stats.profitCfa).toLocaleString('fr-FR') + ' CFA';
+                bloc.innerText = `📊 Aujourd'hui : ${stats.nb} opération${stats.nb > 1 ? 's' : ''} · ROI moyen ${stats.roiMoyen}% · profit ${profitTxt}`;
+                bloc.classList.remove('hidden');
+            } else {
+                bloc.classList.add('hidden');
             }
         }
 

@@ -297,6 +297,22 @@
                     <div id="cardP" class="glass p-6 rounded-3xl border-l-4 border-red-600"><p class="text-[9px] text-slate-500 uppercase font-black italic mb-1">Pinnacle — Réserve Principale</p><p id="fluxP_status" class="text-[10px] font-black uppercase mb-3">SANS DONNÉES</p><p id="fluxP" class="text-2xl font-mono font-black italic">--</p><p id="fluxCibleP" class="text-[8px] text-slate-600 uppercase font-black mt-2 not-italic"></p></div>
                 </div>
 
+                <!-- Panneau "Historique des anomalies" (section dédiée, demande explicite de
+                     l'utilisateur, en plus du badge ⚠️ sur chaque ligne du tableau plus bas) —
+                     regroupe par opération toutes les anomalies (marché, cotes, edge suspect...)
+                     pas encore marquées comme vérifiées ; la case ci-dessous permet de réafficher
+                     aussi celles déjà traitées. Voir construireListeAnomalies(). -->
+                <div class="bg-slate-900/40 rounded-3xl p-8 border border-amber-500/20 font-mono">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xs font-black uppercase tracking-[0.3em] text-amber-500 italic">⚠️ Anomalies à vérifier</h3>
+                        <label class="text-[9px] text-slate-500 uppercase font-black italic flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="afficherAnomaliesTraitees" onchange="rafraichirVueEnsemble()">
+                            Afficher aussi les traitées
+                        </label>
+                    </div>
+                    <div id="listeAnomalies" class="text-[10px] leading-relaxed"></div>
+                </div>
+
                 <div class="bg-slate-900/40 rounded-3xl p-8 border border-white/5 font-mono">
                     <div class="flex justify-between items-center mb-6">
                         <h3 class="text-xs font-black uppercase tracking-[0.3em] text-slate-500 italic">Journal des Opérations</h3>
@@ -1743,10 +1759,51 @@
                         // groupe capturant classique qui l'aurait effacé du nom affiché. Bug réel
                         // constaté : le marché d'un bloc "Corners" restait vide (affiché "?") alors
                         // que la cote et le reste étaient corrects.
+                        // Règle PRIORITAIRE (codes abrégés tout en MAJUSCULES, ex. "TO(2.5)",
+                        // "AH1(-1.5)", "DNB1") — inchangée, essayée EN PREMIER pour ne jamais
+                        // perdre la correction de point décimal (corrigerPointMarche, ex.
+                        // "TO(25)" → "TO(2.5)") qui ne s'applique qu'à ce chemin.
                         const mMarche = reste.match(/(?<=^|\s|\))([A-Z0-9]{1,4}(?:\s?\([^)]{0,15}\))*)\s*$/);
-                        if (mMarche && mMarche[1] && !estResiduLettreSeule(mMarche[1])) {
+                        const marcheDejaTrouve = mMarche && mMarche[1] && !estResiduLettreSeule(mMarche[1]);
+                        // Règle GÉNÉRALISÉE — marché écrit en toutes lettres, CASSE QUELCONQUE,
+                        // suivi d'une ligne purement numérique entre parenthèses. N'est tentée que
+                        // si la règle ci-dessus n'a RIEN trouvé de valide, pour ne jamais risquer
+                        // d'écraser une vraie trouvaille (même principe que le filet de repli
+                        // existant plus bas).
+                        //
+                        // Généralisation d'un cas réel (alerte China - Palestine, bloc 1xbet) :
+                        // "Exactly(2)" restait collé au nom du match ("China – Palestine
+                        // Exactly(2)") et le marché retombait vide, déclenchant à tort la liste
+                        // déroulante "marché non lu" alors que l'OCR avait bien lu ce marché.
+                        // Cause : contrairement aux autres codes (TO, TU, AH1, DNB1...), toujours
+                        // tout en MAJUSCULES, "Exactly" (3e issue des marchés Plus/Moins/
+                        // Exactement) est un mot anglais complet lu en casse mixte par
+                        // BreakingBet — la règle ci-dessus exige des majuscules pures ET un code
+                        // d'au plus 4 caractères (garde-fou anti-faux-positif contre un nom
+                        // d'équipe comme "Ufa", voir plus haut), donc ne pouvait jamais le
+                        // reconnaître. Plutôt que d'ajouter un cas spécifique à chaque nouveau nom
+                        // de marché qui apparaîtrait de la même façon (demande explicite de
+                        // l'utilisateur : "généraliser"), cette règle couvre D'OFFICE tout futur
+                        // marché de la même famille.
+                        //
+                        // Exige au moins 2 lettres (jamais 1 seule, pour ne pas risquer de
+                        // capturer un résidu isolé comme "k(2)") ET un contenu STRICTEMENT
+                        // numérique entre parenthèses (jamais du texte comme "(Women)" ou
+                        // "(Corners)", qui reste un simple qualificatif de catégorie, jamais une
+                        // ligne de marché) — toujours à la toute fin de la ligne, exactement comme
+                        // la règle prioritaire ci-dessus. Normalisé en MAJUSCULES ("EXACTLY(2)")
+                        // pour rester cohérent avec le style des autres codes affichés à l'écran
+                        // et dans le signal Telegram, et repasse par corrigerPointMarche comme
+                        // l'autre chemin (même éventuelle correction de point décimal avalé).
+                        const mMotParenthese = marcheDejaTrouve
+                            ? null
+                            : reste.match(/\b([A-Za-z]{2,14})\s*\(\s*(-?\d+(?:[.,]\d+)?)\s*\)\s*$/);
+                        if (marcheDejaTrouve) {
                             marche = corrigerPointMarche(mMarche[1], meta.sport);
                             reste = reste.slice(0, mMarche.index).trim();
+                        } else if (mMotParenthese) {
+                            marche = corrigerPointMarche(`${mMotParenthese[1].toUpperCase()}(${mMotParenthese[2].replace(',', '.')})`, meta.sport);
+                            reste = reste.slice(0, mMotParenthese.index).trim();
                         } else {
                             // Filet de repli — l'extraction directe a totalement échoué, OU n'a
                             // trouvé qu'un résidu isolé d'une seule lettre (estResiduLettreSeule,
@@ -2543,9 +2600,17 @@
         // Types de marché gérés par la liste déroulante de choix manuel ci-dessous — reprend
         // exactement les codes déjà reconnus par traduireMarche(), pour que le message Telegram
         // envoyé reste toujours compréhensible quel que soit le chemin (OCR ou choix manuel) par
-        // lequel bloc.marche a été rempli. Les 5 derniers ("AH1"/"AH2"/"AH0"/"TO"/"TU") exigent
-        // une ligne numérique en plus du type (voir MARCHE_TYPES_AVEC_LIGNE).
-        const MARCHE_TYPES_AVEC_LIGNE = ['AH1', 'AH2', 'AH0', 'TO', 'TU'];
+        // lequel bloc.marche a été rempli. Les 6 derniers ("AH1"/"AH2"/"AH0"/"TO"/"TU"/"EXACTLY")
+        // exigent une ligne numérique en plus du type (voir MARCHE_TYPES_AVEC_LIGNE).
+        //
+        // "EXACTLY" ajouté après un bug réel (alerte China - Palestine, bloc 1xbet, voir
+        // tests/marche-exactly-casse-mixte.test.mjs) : à ce moment-là, traduireMarche() le
+        // reconnaissait déjà (l'OCR avait bien lu "Exactly(2)"), mais cette liste déroulante
+        // manuelle n'avait toujours pas été mise à jour en conséquence — un marché "EXACTLY"
+        // non lu par l'OCR, lui, serait resté bloqué sur "-- Choisir le marché --" sans aucune
+        // option pour le sélectionner à la main. Signalé explicitement par l'utilisateur : "Je
+        // pense que la liste déroulante pour le choix du marché est incomplète".
+        const MARCHE_TYPES_AVEC_LIGNE = ['AH1', 'AH2', 'AH0', 'TO', 'TU', 'EXACTLY'];
 
         // Décompose un code de marché déjà lu ("AH1(-1.5)", "DNB2"...) en {type, ligne} pour
         // PRÉ-SÉLECTIONNER la liste déroulante sur ce qui a été déduit automatiquement (voir le
@@ -2559,7 +2624,7 @@
             }
             let mo = m.match(/^(AH[012])\(?(-?\d+(?:\.\d+)?)\)?$/);
             if (mo) return { type: mo[1], ligne: mo[2] };
-            mo = m.match(/^(TO|TU)\(?(\d+(?:\.\d+)?)\)?$/);
+            mo = m.match(/^(TO|TU|EXACTLY)\(?(\d+(?:\.\d+)?)\)?$/);
             if (mo) return { type: mo[1], ligne: mo[2] };
             return { type: '', ligne: '' };
         }
@@ -2586,6 +2651,7 @@
                 ['AH0', 'AH0 — Handicap nul (ligne à préciser)'],
                 ['TO', 'TO — Plus de (total, ligne à préciser)'],
                 ['TU', 'TU — Moins de (total, ligne à préciser)'],
+                ['EXACTLY', 'EXACTLY — Exactement (total exact, ligne à préciser)'],
             ];
             const opt = (v, label) => `<option value="${v}"${v === typeActuel ? ' selected' : ''}>${escapeHtml(label)}</option>`;
             return `<option value=""${typeActuel ? '' : ' selected'}>-- Choisir le marché --</option>`
@@ -2663,6 +2729,38 @@
             alerteMeta.blocs[index].cote = valeur;
             alerteMeta.blocs[index].coteSuggereeAcceptee = true;
             appliquerAlerteMeta(alerteMeta, alerteMeta.confianceOcr, alerteMeta.confianceHeure, { reapplication: true });
+        }
+
+        // Copie en un clic un rapport texte couvrant TOUTE l'alerte d'un coup (tous les côtés,
+        // PLUS le texte brut OCR complet) — demande explicite de l'utilisateur ("Bouton signaler
+        // ce bloc"), pour remplacer les captures d'écran (3 images à chaque fois) par un simple
+        // copier-coller directement exploitable.
+        //
+        // D'abord un bouton PAR côté (un signalement = un côté). Changé en UN SEUL bouton
+        // général après retour de l'utilisateur ("Couvrir tout d'un coup m'éviterait de me poser
+        // des questions") : le texte brut OCR était de toute façon déjà inclus en entier à
+        // chaque fois (les blocs d'une même alerte s'influencent parfois entre eux dans le
+        // parseur — voir par ex. tests/qualificatif-ot-garble-numerique.test.mjs), donc un seul
+        // bouton qui liste "ce qui a été compris" pour CHAQUE côté, suivi du texte brut une
+        // seule fois, couvre exactement le même besoin sans avoir à deviner quel côté signaler.
+        function signalerAlerte() {
+            if (!alerteMeta || !alerteMeta.blocs.length) return;
+            const rapport = [
+                `🐞 Signalement — alerte complète (${alerteMeta.blocs.length} côté${alerteMeta.blocs.length > 1 ? 's' : ''})`,
+                '',
+                ...alerteMeta.blocs.map((b, i) => [
+                    `Côté ${i + 1} (${b.bookmaker || '?'})`,
+                    `  Marché analysé : ${b.marche || 'VIDE'}`,
+                    `  Cote analysée : ${b.cote != null ? b.cote : 'VIDE'}`,
+                    `  Match analysé : ${b.match || 'VIDE'}`,
+                    `  Ligue analysée : ${b.ligue || 'VIDE'}`,
+                ].join('\n')),
+                '',
+                `Texte brut OCR complet (toute l'alerte) :`,
+                alerteMeta.texteBrut || '(indisponible)',
+            ].join('\n');
+            navigator.clipboard.writeText(rapport);
+            afficherToast('📋 Signalement copié — colle-le directement dans le chat.', 'info');
         }
 
         // Applique les données extraites : pré-remplit le terminal (2 ou 3 issues selon
@@ -3009,7 +3107,7 @@
                 }).join('');
                 resume.innerHTML = `
                     ${ligneAvertissements}
-                    <p class="text-emerald-500 font-black uppercase not-italic">${escapeHtml(meta.sport) || '?'} · ${escapeHtml(meta.dateHeure) || '?'} · Edge annoncé : ${meta.edgePct ? meta.edgePct + '%' : '?'} ${meta.marcheGlobal ? `· Marché : <span class="text-amber-400">${escapeHtml(meta.marcheGlobal)}</span>` : ''} ${nb >= 3 ? '<span class="text-purple-400">· 3 ISSUES</span>' : ''}</p>
+                    <p class="text-emerald-500 font-black uppercase not-italic">${escapeHtml(meta.sport) || '?'} · ${escapeHtml(meta.dateHeure) || '?'} · Edge annoncé : ${meta.edgePct ? meta.edgePct + '%' : '?'} ${meta.marcheGlobal ? `· Marché : <span class="text-amber-400">${escapeHtml(meta.marcheGlobal)}</span>` : ''} ${nb >= 3 ? '<span class="text-purple-400">· 3 ISSUES</span>' : ''} <button type="button" onclick="signalerAlerte()" class="text-slate-600 hover:text-amber-400 not-italic align-middle" title="Copier un rapport texte de TOUTE l'alerte (pour signaler un problème)">📋 Signaler</button></p>
                     ${lignesBlocs}
                     <p class="text-slate-600 not-italic">Vérifie les cotes ${nb >= 3 ? 'et l\'assignation des bookmakers' : ''} pré-remplies avant de lancer l'arbitrage.</p>
                     <details class="mt-1 not-italic"><summary class="cursor-pointer text-slate-600 uppercase font-black text-[8px]">Voir le texte brut lu par l'OCR (vérification manuelle)</summary><pre class="whitespace-pre-wrap text-[8px] text-slate-500 mt-1 bg-black/40 p-2 rounded-lg">${escapeHtml(meta.texteBrut)}</pre></details>
@@ -3418,6 +3516,11 @@
             if (mo) return `Plus de ${mo[2]} buts`;
             mo = m.match(/^(TU|UN|UNDER|MOINS)\(?(\d+(?:\.\d+)?)\)?$/);
             if (mo) return `Moins de ${mo[2]} buts`;
+
+            // Marché "Exactly(N)" — 3e issue des marchés Plus/Moins/Exactement (total EXACT de
+            // buts, voir corrigerPointMarche) — normalisé en "EXACTLY(N)" lors de l'extraction.
+            mo = m.match(/^EXACTLY\(?(\d+(?:\.\d+)?)\)?$/);
+            if (mo) return `Exactement ${mo[1]} buts`;
 
             // AH1(0) / AH2(0) — handicap nul équivaut exactement à un Draw No Bet classique :
             // remboursé en cas de nul, gagnant sinon. Traduction dédiée plus parlante que
@@ -4784,6 +4887,73 @@
             return `<span class="text-red-400">${label} : ❌ échec (${escapeHtml(statut.erreur || '?')})</span> <button onclick="event.stopPropagation(); ${fonctionRenvoi}(${index}, '${canal}')" class="text-amber-400 hover:text-amber-300 underline text-[8px]">renvoyer</button>`;
         }
 
+        // ══════════════════════════════════════════════════════════════════
+        //  HISTORIQUE DES ANOMALIES — demande explicite de l'utilisateur
+        //  ("Historique des anomalies") après une discussion (AskUserQuestion)
+        //  sur le périmètre exact. `h.alIncertitudes` (les doutes sur les
+        //  données à la lecture — marché non lu/déduit, cote reconstituée/
+        //  suggérée, écart edge suspect...) était déjà calculé et stocké sur
+        //  chaque opération, mais seulement visible en dépliant le détail
+        //  d'une ligne, en texte brut non actionnable. Ajout d'un statut
+        //  "traité" par anomalie (`h.alIncertitudesTraitees`, un tableau de
+        //  booléens parallèle à `alIncertitudes`, même index), d'un badge ⚠️
+        //  sur la ligne principale du journal tant qu'il en reste au moins
+        //  une non traitée (choix explicite de l'utilisateur plutôt que
+        //  "dès qu'une seule est vue"), et d'un panneau dédié listant TOUTES
+        //  les anomalies non traitées de tout le journal (avec un filtre pour
+        //  réafficher aussi celles déjà traitées) — les deux à la fois,
+        //  également choix explicite de l'utilisateur.
+        // ══════════════════════════════════════════════════════════════════
+
+        // Nombre d'anomalies encore NON traitées pour une opération — sert à la fois au badge
+        // de la ligne principale et au filtrage du panneau dédié.
+        function anomaliesNonTraiteesCount(h) {
+            if (!h || !h.alIncertitudes || !h.alIncertitudes.length) return 0;
+            const traitees = h.alIncertitudesTraitees || [];
+            return h.alIncertitudes.filter((_, idx) => !traitees[idx]).length;
+        }
+
+        // Bascule le statut "traité" d'UNE anomalie précise d'UNE opération précise (identifiée
+        // par son VRAI index dans `hist`, jamais sa position dans une liste filtrée/triée — même
+        // principe que resolvPending/ouvrirEditionOperation, pour ne jamais marquer la mauvaise
+        // opération par erreur après une recherche).
+        function marquerAnomalieTraitee(histIndex, anomalieIndex, traite) {
+            const h = hist[histIndex];
+            if (!h || !h.alIncertitudes || anomalieIndex < 0 || anomalieIndex >= h.alIncertitudes.length) return;
+            if (!h.alIncertitudesTraitees) h.alIncertitudesTraitees = [];
+            h.alIncertitudesTraitees[anomalieIndex] = !!traite;
+            sauvegarder();
+            rafraichirVueEnsemble();
+        }
+
+        // Construit le panneau dédié "⚠️ Anomalies à vérifier" — par défaut, seules les
+        // anomalies NON traitées sont listées (demande explicite de l'utilisateur), regroupées
+        // par opération ; la case "Afficher aussi les traitées" permet de les revoir au besoin.
+        function construireListeAnomalies() {
+            const container = document.getElementById('listeAnomalies');
+            if (!container) return;
+            const afficherTraitees = !!document.getElementById('afficherAnomaliesTraitees')?.checked;
+            const blocs = [];
+            hist.forEach((h, histIndex) => {
+                if (!h.alIncertitudes || !h.alIncertitudes.length) return;
+                const traitees = h.alIncertitudesTraitees || [];
+                const items = h.alIncertitudes
+                    .map((texte, anomalieIndex) => ({ texte, anomalieIndex, traite: !!traitees[anomalieIndex] }))
+                    .filter(item => afficherTraitees || !item.traite);
+                if (!items.length) return;
+                const entete = `${escapeHtml(h.fullDate || '')}${h.alMatch ? ' — ' + escapeHtml(h.alMatch) : (h.softId ? ' — ' + escapeHtml(h.softId) : '')}`;
+                const lignesItems = items.map(item => `
+                    <label class="flex items-start gap-2 pl-3 py-0.5 cursor-pointer ${item.traite ? 'opacity-40 line-through' : ''}">
+                        <input type="checkbox" ${item.traite ? 'checked' : ''} onchange="marquerAnomalieTraitee(${histIndex}, ${item.anomalieIndex}, this.checked)" class="mt-0.5">
+                        <span>${escapeHtml(item.texte)}</span>
+                    </label>`).join('');
+                blocs.push(`<div class="mb-3"><p class="text-amber-400/80 font-black uppercase not-italic text-[9px] mb-1">${entete}</p>${lignesItems}</div>`);
+            });
+            container.innerHTML = blocs.length
+                ? blocs.join('')
+                : `<p class="text-slate-600 italic">Aucune anomalie${afficherTraitees ? '' : ' non traitée'} — rien à vérifier.</p>`;
+        }
+
         function rafraichirVueEnsemble() {
             const totalReel = b1X + bM + bP;
             document.getElementById('ensTotal').innerText = Math.floor(totalReel).toLocaleString();
@@ -4791,7 +4961,8 @@
             document.getElementById('editPEur').value = (bP / tx).toFixed(2);
             updateDynamicFlux('1X', b1X); updateDynamicFlux('M', bM); updateDynamicFlux('P', bP);
             majBandeauOperationsPending();
-            
+            construireListeAnomalies();
+
             const sDate = document.getElementById('searchDate').value.toLowerCase();
             const sMode = document.getElementById('searchMode').value.toLowerCase();
             const s1X = document.getElementById('search1X').value.toLowerCase();
@@ -4897,6 +5068,13 @@
                 // aussi (voir lancerArbitrage → diffuserOperationTelegram, inconditionnel).
                 const aDetail = aAlerte || !!(h.telegramVip || h.telegramGratuit || h.telegramClotureVip || h.telegramClotureGratuit);
                 const alerteBadge = aAlerte ? `<span class="text-emerald-500 text-[7px] ml-1" title="Alerte BreakingBet tracée">🔍${h.alEdgePct ? ' ' + h.alEdgePct + '%' : ''}</span>` : '';
+                // Badge "anomalie(s) non traitée(s)" sur la ligne principale — s'éteint
+                // seulement quand TOUTES les anomalies de CETTE opération sont traitées (choix
+                // explicite de l'utilisateur, pas dès qu'une seule a été vue).
+                const nbAnomaliesNonTraitees = anomaliesNonTraiteesCount(h);
+                const anomalieBadge = nbAnomaliesNonTraitees
+                    ? `<span class="text-amber-400 text-[7px] ml-1" title="${nbAnomaliesNonTraitees} anomalie${nbAnomaliesNonTraitees > 1 ? 's' : ''} non traitée${nbAnomaliesNonTraitees > 1 ? 's' : ''} — voir le détail ou le panneau Anomalies">⚠️ ${nbAnomaliesNonTraitees}</span>`
+                    : '';
                 const rowClass = `log-row italic ${h.status === 'PENDING' ? 'opacity-60 bg-white/5' : ''} ${aDetail ? 'cursor-pointer hover:bg-white/5' : ''}`;
                 const rowClick = aDetail ? `onclick="toggleAlertDetail(${index})"` : '';
                 const boutonEdit = `<button onclick="event.stopPropagation(); ouvrirEditionOperation(${index})" class="text-slate-500 hover:text-emerald-400 ml-2" title="Éditer cette opération">✏️</button>`;
@@ -4906,14 +5084,17 @@
                 // simple équivalent de conversion, jamais réellement déposé en euros) au lieu du
                 // vrai montant CFA engagé chez ce soft.
                 const celluleDroite = bkDroitJournal(h) === 'pinnacle' ? (h.miseP_Eur||0)+'€' : (h.miseP_Cfa||0).toLocaleString('fr-FR')+' CFA';
-                const ligneP = `<tr class="${rowClass}" ${rowClick}><td class="py-4 text-slate-500">${h.fullDate}${alerteBadge}</td><td class="py-4 uppercase font-black ${modeColor}">${h.softId}${issuesBadge}</td><td class="text-center font-bold text-blue-400">${h.m1X || '-'}</td><td class="text-center font-bold text-blue-600">${h.mM || '-'}</td><td class="text-center">S:${h.os}/P:${h.opn}</td><td class="text-center font-bold text-red-400">${celluleDroite}</td><td class="text-right text-emerald-500 font-black">${h.pPct}%</td><td class="text-right font-black">${statusCell}${boutonEdit}</td></tr>`;
+                const ligneP = `<tr class="${rowClass}" ${rowClick}><td class="py-4 text-slate-500">${h.fullDate}${alerteBadge}${anomalieBadge}</td><td class="py-4 uppercase font-black ${modeColor}">${h.softId}${issuesBadge}</td><td class="text-center font-bold text-blue-400">${h.m1X || '-'}</td><td class="text-center font-bold text-blue-600">${h.mM || '-'}</td><td class="text-center">S:${h.os}/P:${h.opn}</td><td class="text-center font-bold text-red-400">${celluleDroite}</td><td class="text-right text-emerald-500 font-black">${h.pPct}%</td><td class="text-right font-black">${statusCell}${boutonEdit}</td></tr>`;
                 const ligneDetail = aDetail ? `<tr id="detail-${index}" class="hidden bg-black/30 not-italic"><td colspan="8" class="p-4 text-[9px] text-slate-400 space-y-1 leading-relaxed">
                         ${aAlerte ? `<p><span class="text-emerald-500 font-black uppercase">${escapeHtml(h.alSport) || '--'}</span> · ${escapeHtml(h.alDateHeure) || '--'} · Edge annoncé BreakingBet : <span class="text-amber-400 font-black">${h.alEdgePct ? h.alEdgePct + '%' : '--'}</span></p>
                         <p>Match : <span class="text-white font-bold">${escapeHtml(h.alMatch) || '--'}</span> — <span class="text-slate-500">${escapeHtml(h.alLigue) || '--'}</span></p>
                         <p>Marché : ${escapeHtml(h.alMarche) || '--'} · Bookmakers de l'alerte : ${escapeHtml(h.alBookmakers) || '--'}</p>` : `<p class="text-slate-600">Opération saisie manuellement (aucune alerte OCR tracée).</p>`}
                         <p class="pt-1 border-t border-white/5">📡 Signal : ${statutTelegramHtml(h.telegramVip, 'vip', index)} &nbsp;·&nbsp; ${statutTelegramHtml(h.telegramGratuit, 'gratuit', index)}</p>
                         ${h.status === 'COMPLETED' ? `<p>🏁 Clôture : ${statutTelegramHtml(h.telegramClotureVip, 'vip', index, 'renvoyerClotureTelegram')} &nbsp;·&nbsp; ${statutTelegramHtml(h.telegramClotureGratuit, 'gratuit', index, 'renvoyerClotureTelegram')}</p>` : ''}
-                        ${h.alIncertitudes && h.alIncertitudes.length ? `<p class="text-amber-400">🔎 Données incertaines à la lecture : ${h.alIncertitudes.map(escapeHtml).join(' · ')}</p>` : ''}
+                        ${h.alIncertitudes && h.alIncertitudes.length ? `<div class="text-amber-400"><p class="mb-1">🔎 Données incertaines à la lecture — coche une fois vérifiée :</p>${h.alIncertitudes.map((texte, ai) => {
+                            const traite = !!(h.alIncertitudesTraitees && h.alIncertitudesTraitees[ai]);
+                            return `<label class="flex items-start gap-2 pl-3 py-0.5 cursor-pointer ${traite ? 'opacity-40 line-through' : ''}" onclick="event.stopPropagation();"><input type="checkbox" ${traite ? 'checked' : ''} onchange="event.stopPropagation(); marquerAnomalieTraitee(${index}, ${ai}, this.checked)" onclick="event.stopPropagation();" class="mt-0.5"><span>${escapeHtml(texte)}</span></label>`;
+                        }).join('')}</div>` : ''}
                         ${h.alOcrBrut ? `<details class="mt-1"><summary class="cursor-pointer text-slate-600 uppercase font-black text-[8px]">Texte OCR brut (traçabilité)</summary><pre class="whitespace-pre-wrap text-[8px] text-slate-600 mt-1 bg-black/40 p-2 rounded-lg">${escapeHtml(h.alOcrBrut)}</pre></details>` : ''}
                     </td></tr>` : '';
                 return ligneP + ligneDetail;
